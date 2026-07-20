@@ -49,7 +49,8 @@ public final class MainActivity extends Activity
     private static final int PHOTO_PAGE = 2;
     private static final long PHOTO_INTERVAL_MS = 45000;
     private static final long PHOTO_PAN_DURATION_MS = PHOTO_INTERVAL_MS - 2000;
-    private static final long PHOTO_PAN_FRAME_MS = 33;
+    private static final long PHOTO_PAN_FRAME_MS = 67;
+    private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.20f;
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
 
     private final List<Button> actionButtons = new ArrayList<Button>();
@@ -281,7 +282,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.4.2", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.4.3", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -743,7 +744,9 @@ public final class MainActivity extends Activity
         float overflowX = Math.max(0.0f, scaledWidth - viewWidth);
         float overflowY = Math.max(0.0f, scaledHeight - viewHeight);
         float smoothProgress = progress * progress * (3.0f - 2.0f * progress);
-        float position = photoPanReverse ? 1.0f - smoothProgress : smoothProgress;
+        float startPosition = (1.0f - PHOTO_PAN_TRAVEL_FRACTION) / 2.0f;
+        float travelProgress = photoPanReverse ? 1.0f - smoothProgress : smoothProgress;
+        float position = startPosition + PHOTO_PAN_TRAVEL_FRACTION * travelProgress;
 
         float translateX;
         float translateY;
