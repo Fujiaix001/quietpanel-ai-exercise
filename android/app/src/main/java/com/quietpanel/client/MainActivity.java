@@ -9,11 +9,14 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
 import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -24,9 +27,13 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -38,6 +45,9 @@ public final class MainActivity extends Activity
     private static final int SECONDARY = Color.rgb(143, 152, 163);
     private static final int ACCENT = Color.rgb(72, 184, 199);
     private static final int WARNING = Color.rgb(239, 108, 108);
+    private static final int PHOTO_PAGE = 2;
+    private static final long PHOTO_INTERVAL_MS = 30000;
+    private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
 
     private final List<Button> actionButtons = new ArrayList<Button>();
     private final DiskRow[] diskRows = new DiskRow[4];
@@ -57,6 +67,20 @@ public final class MainActivity extends Activity
     private TextView memoryValue;
     private TextView downloadValue;
     private TextView uploadValue;
+    private ImageView photoImage;
+    private TextView photoStatus;
+    private TextView photoClock;
+    private Bitmap photoBitmap;
+    private final List<File> photoFiles = new ArrayList<File>();
+    private final Handler photoHandler = new Handler();
+    private final SimpleDateFormat photoClockFormat =
+            new SimpleDateFormat("yyyy/MM/dd  HH:mm:ss", Locale.TAIWAN);
+    private int photoIndex;
+    private int photoFailures;
+    private int photoGeneration;
+    private boolean photoLoading;
+    private boolean activityResumed;
+    private long nextPhotoAt;
     private ImageView apodImage;
     private TextView apodImageStatus;
     private TextView apodTitle;
@@ -68,6 +92,21 @@ public final class MainActivity extends Activity
     private long highCpuStartedAt = -1;
     private boolean cpuWarning;
     private boolean diskWarning;
+
+    private final Runnable photoTicker = new Runnable() {
+        @Override
+        public void run() {
+            if (!activityResumed || currentPage != PHOTO_PAGE) {
+                return;
+            }
+            updatePhotoClock();
+            if (!photoLoading && !photoFiles.isEmpty()
+                    && SystemClock.elapsedRealtime() >= nextPhotoAt) {
+                loadNextPhoto();
+            }
+            photoHandler.postDelayed(this, 1000);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,7 +127,24 @@ public final class MainActivity extends Activity
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        activityResumed = true;
+        if (currentPage == PHOTO_PAGE) {
+            startPhotoSlideshow();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        activityResumed = false;
+        stopPhotoSlideshow();
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
+        stopPhotoSlideshow();
         if (transport != null) {
             transport.stop();
         }
@@ -101,6 +157,13 @@ public final class MainActivity extends Activity
         if (apodBitmap != null && !apodBitmap.isRecycled()) {
             apodBitmap.recycle();
             apodBitmap = null;
+        }
+        if (photoImage != null) {
+            photoImage.setImageDrawable(null);
+        }
+        if (photoBitmap != null && !photoBitmap.isRecycled()) {
+            photoBitmap.recycle();
+            photoBitmap = null;
         }
         super.onDestroy();
     }
@@ -191,7 +254,7 @@ public final class MainActivity extends Activity
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.3", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.4", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         header.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -202,6 +265,7 @@ public final class MainActivity extends Activity
         pager = new SwipePager(this);
         pager.addView(buildSystemPage());
         pager.addView(buildStoragePage());
+        pager.addView(buildPhotoPage());
         pager.addView(buildApodPage());
         pager.addView(buildMacroPage());
         pager.addView(buildToolPage());
@@ -260,6 +324,40 @@ public final class MainActivity extends Activity
             page.addView(diskRows[i].container, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         }
+        return page;
+    }
+
+    private View buildPhotoPage() {
+        FrameLayout page = new FrameLayout(this);
+        page.setBackgroundColor(Color.BLACK);
+
+        photoImage = new ImageView(this);
+        photoImage.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        page.addView(photoImage, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+
+        photoStatus = makeText(
+                "將照片放入 /sdcard/" + PHOTO_DIRECTORY,
+                16, SECONDARY, Gravity.CENTER);
+        photoStatus.setPadding(dp(24), dp(12), dp(24), dp(12));
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER);
+        page.addView(photoStatus, statusParams);
+
+        photoClock = makeText("", 20, PRIMARY, Gravity.CENTER);
+        photoClock.setTypeface(Typeface.DEFAULT_BOLD);
+        photoClock.setBackgroundColor(Color.argb(155, 0, 0, 0));
+        photoClock.setPadding(dp(12), dp(6), dp(12), dp(6));
+        FrameLayout.LayoutParams clockParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.RIGHT);
+        clockParams.setMargins(dp(12), dp(12), dp(12), dp(12));
+        page.addView(photoClock, clockParams);
+        updatePhotoClock();
         return page;
     }
 
@@ -498,13 +596,19 @@ public final class MainActivity extends Activity
     }
 
     private void showPage(int requestedPage) {
-        currentPage = Math.max(0, Math.min(4, requestedPage));
+        if (currentPage == PHOTO_PAGE) {
+            stopPhotoSlideshow();
+        }
+        currentPage = Math.max(0, Math.min(5, requestedPage));
         pager.setDisplayedChild(currentPage);
+        if (currentPage == PHOTO_PAGE && activityResumed) {
+            startPhotoSlideshow();
+        }
         updatePageIndicator();
     }
 
     private void updatePageIndicator() {
-        String[] labels = { "系統", "儲存", "NASA", "MACRO", "快捷" };
+        String[] labels = { "系統", "儲存", "相簿", "NASA", "MACRO", "快捷" };
         StringBuilder dots = new StringBuilder();
         for (int i = 0; i < labels.length; i++) {
             dots.append(i == currentPage ? "●" : "○");
@@ -521,6 +625,168 @@ public final class MainActivity extends Activity
         }
         pageIndicator.setText(dots.toString());
         pageIndicator.setTextColor(cpuWarning || diskWarning ? WARNING : SECONDARY);
+    }
+
+    private void startPhotoSlideshow() {
+        stopPhotoSlideshow();
+        updatePhotoClock();
+        refreshPhotoFiles();
+        if (!photoFiles.isEmpty()) {
+            loadNextPhoto();
+        }
+        photoHandler.postDelayed(photoTicker, 1000);
+    }
+
+    private void stopPhotoSlideshow() {
+        photoHandler.removeCallbacks(photoTicker);
+        photoGeneration++;
+        photoLoading = false;
+        if (photoImage != null) {
+            photoImage.setImageDrawable(null);
+        }
+        if (photoBitmap != null && !photoBitmap.isRecycled()) {
+            photoBitmap.recycle();
+            photoBitmap = null;
+        }
+    }
+
+    private void updatePhotoClock() {
+        if (photoClock != null) {
+            photoClock.setText(photoClockFormat.format(new Date()));
+        }
+    }
+
+    private void refreshPhotoFiles() {
+        photoFiles.clear();
+        photoIndex = 0;
+        photoFailures = 0;
+
+        File directory = new File(
+                Environment.getExternalStorageDirectory(), PHOTO_DIRECTORY);
+        if (!directory.exists() && !directory.mkdirs()) {
+            showPhotoStatus("無法建立照片資料夾\n" + directory.getAbsolutePath(), WARNING);
+            return;
+        }
+
+        File[] entries = directory.listFiles();
+        if (entries != null) {
+            for (File entry : entries) {
+                if (entry.isFile() && isSupportedPhoto(entry.getName())) {
+                    photoFiles.add(entry);
+                }
+            }
+        }
+        Collections.shuffle(photoFiles);
+        if (photoFiles.isEmpty()) {
+            showPhotoStatus(
+                    "相簿中沒有照片\n請將 JPG 或 PNG 放入\n"
+                            + directory.getAbsolutePath(),
+                    SECONDARY);
+        } else {
+            showPhotoStatus("正在載入相簿…", SECONDARY);
+        }
+    }
+
+    private boolean isSupportedPhoto(String name) {
+        String lower = name.toLowerCase(Locale.US);
+        return lower.endsWith(".jpg")
+                || lower.endsWith(".jpeg")
+                || lower.endsWith(".png");
+    }
+
+    private void loadNextPhoto() {
+        if (photoLoading || photoFiles.isEmpty()) {
+            return;
+        }
+        if (photoIndex >= photoFiles.size()) {
+            Collections.shuffle(photoFiles);
+            photoIndex = 0;
+        }
+
+        final File file = photoFiles.get(photoIndex++);
+        final int generation = photoGeneration;
+        photoLoading = true;
+        nextPhotoAt = SystemClock.elapsedRealtime() + PHOTO_INTERVAL_MS;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final Bitmap bitmap = decodePhoto(file);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (generation != photoGeneration
+                                || currentPage != PHOTO_PAGE
+                                || !activityResumed) {
+                            if (bitmap != null && !bitmap.isRecycled()) {
+                                bitmap.recycle();
+                            }
+                            return;
+                        }
+                        photoLoading = false;
+                        if (bitmap == null) {
+                            photoFailures++;
+                            if (photoFailures >= photoFiles.size()) {
+                                photoFiles.clear();
+                                showPhotoStatus("相簿中的圖片都無法讀取", WARNING);
+                            } else {
+                                loadNextPhoto();
+                            }
+                            return;
+                        }
+                        photoFailures = 0;
+                        displayPhoto(bitmap);
+                    }
+                });
+            }
+        }, "QuietPanel-photo-decode").start();
+    }
+
+    private Bitmap decodePhoto(File file) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null;
+        }
+
+        int targetWidth = getResources().getDisplayMetrics().widthPixels;
+        int targetHeight = getResources().getDisplayMetrics().heightPixels;
+        double scale = Math.min(
+                (double) targetWidth / bounds.outWidth,
+                (double) targetHeight / bounds.outHeight);
+        double desiredWidth = Math.min(bounds.outWidth, bounds.outWidth * scale);
+        double desiredHeight = Math.min(bounds.outHeight, bounds.outHeight * scale);
+        int sample = 1;
+        while (bounds.outWidth / (sample * 2) >= desiredWidth
+                && bounds.outHeight / (sample * 2) >= desiredHeight) {
+            sample *= 2;
+        }
+
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = sample;
+        options.inPreferredConfig = Bitmap.Config.RGB_565;
+        options.inDither = true;
+        try {
+            return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        } catch (OutOfMemoryError ignored) {
+            return null;
+        }
+    }
+
+    private void displayPhoto(Bitmap bitmap) {
+        Bitmap previous = photoBitmap;
+        photoBitmap = bitmap;
+        photoImage.setImageBitmap(bitmap);
+        photoStatus.setVisibility(View.GONE);
+        if (previous != null && previous != bitmap && !previous.isRecycled()) {
+            previous.recycle();
+        }
+    }
+
+    private void showPhotoStatus(String message, int color) {
+        photoStatus.setText(message);
+        photoStatus.setTextColor(color);
+        photoStatus.setVisibility(View.VISIBLE);
     }
 
     private void displayApod(JSONObject metadata, Bitmap bitmap) {
