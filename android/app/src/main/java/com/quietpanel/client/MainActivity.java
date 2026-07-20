@@ -282,7 +282,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.4.3", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.4.4", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -398,7 +398,7 @@ public final class MainActivity extends Activity
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM | Gravity.RIGHT);
-        clockParams.setMargins(dp(28), dp(28), dp(28), dp(12));
+        clockParams.setMargins(dp(28), dp(28), dp(12), dp(12));
         page.addView(clockPanel, clockParams);
         updatePhotoClock();
         return page;

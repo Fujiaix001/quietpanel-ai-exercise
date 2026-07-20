@@ -1,4 +1,4 @@
-# QuietPanel v6.4.3
+# QuietPanel v6.4.4
 
 QuietPanel 把 Android 4.2.2 手機變成 USB 系統監控與快捷控制面板。
 
