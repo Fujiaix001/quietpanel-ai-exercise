@@ -1,4 +1,10 @@
-# QuietPanel v6.4.4
+# QuietPanel v6.4.5
+
+## 電腦螢幕同步節電
+
+Bridge 會偵測 Windows 螢幕的開關狀態。電腦螢幕關閉時，手機會停止相簿動畫並解除「保持常亮」，讓 Android 依手機的螢幕逾時設定關閉螢幕；電腦螢幕重新亮起時，手機會自動亮起並回到 QuietPanel。
+
+請在手機的開發人員選項關閉「充電時不休眠／Stay awake」，並設定合適的螢幕逾時（例如 15 秒）；否則 Android 仍可能在 USB 充電時保持螢幕亮著。
 
 QuietPanel 把 Android 4.2.2 手機變成 USB 系統監控與快捷控制面板。
 

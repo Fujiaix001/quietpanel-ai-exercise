@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-pub const VERSION: &str = "6.3.0";
+pub const VERSION: &str = "6.4.5";
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ActionRequest {
@@ -19,6 +19,10 @@ pub fn hello() -> Value {
 
 pub fn ping() -> Value {
     json!({ "v": 1, "type": "ping" })
+}
+
+pub fn display_state(display_on: bool) -> Value {
+    json!({ "v": 1, "type": "display_state", "on": display_on })
 }
 
 pub fn action_result(id: u64, ok: bool, message: &str) -> Value {

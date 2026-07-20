@@ -12,6 +12,7 @@ import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
@@ -92,6 +93,8 @@ public final class MainActivity extends Activity
     private boolean photoLoading;
     private boolean photoPanReverse = true;
     private boolean activityResumed;
+    private boolean pcDisplayOn = true;
+    private PowerManager.WakeLock displayWakeLock;
     private long photoPanStartedAt;
     private long nextPhotoAt;
     private ImageView apodImage;
@@ -109,7 +112,7 @@ public final class MainActivity extends Activity
     private final Runnable photoTicker = new Runnable() {
         @Override
         public void run() {
-            if (!activityResumed || currentPage != PHOTO_PAGE) {
+            if (!activityResumed || !pcDisplayOn || currentPage != PHOTO_PAGE) {
                 return;
             }
             updatePhotoClock();
@@ -124,7 +127,7 @@ public final class MainActivity extends Activity
     private final Runnable photoPanTicker = new Runnable() {
         @Override
         public void run() {
-            if (!activityResumed || currentPage != PHOTO_PAGE || photoBitmap == null) {
+            if (!activityResumed || !pcDisplayOn || currentPage != PHOTO_PAGE || photoBitmap == null) {
                 return;
             }
             long elapsed = SystemClock.elapsedRealtime() - photoPanStartedAt;
@@ -139,7 +142,7 @@ public final class MainActivity extends Activity
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        updateScreenKeepAwake();
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -158,7 +161,7 @@ public final class MainActivity extends Activity
     protected void onResume() {
         super.onResume();
         activityResumed = true;
-        if (currentPage == PHOTO_PAGE) {
+        if (pcDisplayOn && currentPage == PHOTO_PAGE) {
             startPhotoSlideshow();
         }
     }
@@ -192,6 +195,9 @@ public final class MainActivity extends Activity
         if (photoBitmap != null && !photoBitmap.isRecycled()) {
             photoBitmap.recycle();
             photoBitmap = null;
+        }
+        if (displayWakeLock != null && displayWakeLock.isHeld()) {
+            displayWakeLock.release();
         }
         super.onDestroy();
     }
@@ -244,6 +250,16 @@ public final class MainActivity extends Activity
     }
 
     @Override
+    public void onDisplayStateChanged(final boolean displayOn) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                applyPcDisplayState(displayOn);
+            }
+        });
+    }
+
+    @Override
     public void onApodReceived(final JSONObject metadata, final byte[] imageBytes) {
         final String date = metadata.optString("date", "");
         if (date.equals(displayedApodDate) && apodBitmap != null) {
@@ -282,7 +298,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.4.4", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.4.5", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -652,7 +668,7 @@ public final class MainActivity extends Activity
         } else {
             appRoot.setPadding(dp(12), dp(8), dp(12), dp(6));
         }
-        if (currentPage == PHOTO_PAGE && activityResumed) {
+        if (currentPage == PHOTO_PAGE && activityResumed && pcDisplayOn) {
             startPhotoSlideshow();
         }
         updatePageIndicator();
@@ -705,6 +721,72 @@ public final class MainActivity extends Activity
         if (pendingPhotoBitmap != null && !pendingPhotoBitmap.isRecycled()) {
             pendingPhotoBitmap.recycle();
             pendingPhotoBitmap = null;
+        }
+    }
+
+    private void pausePhotoForDisplayOff() {
+        photoHandler.removeCallbacks(photoTicker);
+        stopPhotoPan();
+        if (photoImage != null) {
+            photoImage.animate().cancel();
+            photoImage.setAlpha(1.0f);
+        }
+    }
+
+    private void resumePhotoAfterDisplayOn() {
+        if (!activityResumed || currentPage != PHOTO_PAGE) {
+            return;
+        }
+        if (photoBitmap == null) {
+            startPhotoSlideshow();
+            return;
+        }
+        updatePhotoClock();
+        nextPhotoAt = SystemClock.elapsedRealtime() + PHOTO_INTERVAL_MS;
+        startPhotoPan();
+        photoHandler.removeCallbacks(photoTicker);
+        photoHandler.postDelayed(photoTicker, 1000);
+    }
+
+    private void applyPcDisplayState(boolean displayOn) {
+        if (pcDisplayOn == displayOn) {
+            return;
+        }
+        pcDisplayOn = displayOn;
+        updateScreenKeepAwake();
+        if (displayOn) {
+            wakePhoneScreen();
+            resumePhotoAfterDisplayOn();
+        } else {
+            pausePhotoForDisplayOff();
+        }
+    }
+
+    private void updateScreenKeepAwake() {
+        if (pcDisplayOn) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
+    private void wakePhoneScreen() {
+        try {
+            if (displayWakeLock == null) {
+                PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (powerManager == null) {
+                    return;
+                }
+                displayWakeLock = powerManager.newWakeLock(
+                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK
+                                | PowerManager.ACQUIRE_CAUSES_WAKEUP
+                                | PowerManager.ON_AFTER_RELEASE,
+                        "QuietPanel:pc-display");
+            }
+            if (!displayWakeLock.isHeld()) {
+                displayWakeLock.acquire(2000);
+            }
+        } catch (Exception ignored) {
         }
     }
 

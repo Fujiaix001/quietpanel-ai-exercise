@@ -20,6 +20,7 @@ public final class TransportServer {
         void onConnectionChanged(boolean connected, String detail);
         void onStateReceived(JSONObject system, JSONArray disks);
         void onActionResult(long id, boolean ok, String message);
+        void onDisplayStateChanged(boolean displayOn);
     }
 
     private final Listener listener;
@@ -170,8 +171,10 @@ public final class TransportServer {
                 JSONObject acknowledgement = new JSONObject();
                 acknowledgement.put("v", 1);
                 acknowledgement.put("type", "hello_ack");
-                acknowledgement.put("version", "6.3.0");
+                acknowledgement.put("version", "6.4.5");
                 writeMessage(acknowledgement);
+            } else if ("display_state".equals(type)) {
+                listener.onDisplayStateChanged(message.optBoolean("on", true));
             } else if ("state".equals(type)) {
                 listener.onStateReceived(
                         message.optJSONObject("system"),

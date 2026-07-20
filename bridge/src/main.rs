@@ -1,6 +1,7 @@
 mod actions;
 mod adb;
 mod apod;
+mod display;
 mod metrics;
 mod protocol;
 
@@ -27,6 +28,8 @@ fn main() {
     println!("ADB: {}", adb.display_path());
 
     let mut reporter = StatusReporter::default();
+    let mut display_monitor = display::DisplayMonitor::start();
+    println!("PC display monitor: active");
 
     loop {
         let serial = match adb.single_device() {
@@ -54,7 +57,7 @@ fn main() {
             }
         };
 
-        let _ = run_session(stream, &mut reporter, &serial);
+        let _ = run_session(stream, &mut reporter, &serial, &mut display_monitor);
         reporter.report(&format!("Waiting for Android app ({serial})"));
         thread::sleep(RETRY_DELAY);
     }
@@ -64,6 +67,7 @@ fn run_session(
     mut writer: TcpStream,
     reporter: &mut StatusReporter,
     serial: &str,
+    display_monitor: &mut display::DisplayMonitor,
 ) -> io::Result<()> {
     writer.set_nodelay(true)?;
     writer.set_write_timeout(Some(Duration::from_secs(3)))?;
@@ -73,6 +77,10 @@ fn run_session(
     let mut reader = BufReader::new(reader_stream);
 
     write_json(&mut writer, &protocol::hello())?;
+    write_json(
+        &mut writer,
+        &protocol::display_state(display_monitor.current()),
+    )?;
     thread::spawn(apod::deliver);
 
     let mut metrics = Metrics::new();
@@ -82,6 +90,10 @@ fn run_session(
     let mut handshake_complete = false;
 
     loop {
+        if let Some(display_on) = display_monitor.take_changed() {
+            println!("PC display: {}", if display_on { "on" } else { "off" });
+            write_json(&mut writer, &protocol::display_state(display_on))?;
+        }
         if last_state.elapsed() >= STATE_INTERVAL {
             write_json(&mut writer, &metrics.snapshot())?;
             last_state = Instant::now();
