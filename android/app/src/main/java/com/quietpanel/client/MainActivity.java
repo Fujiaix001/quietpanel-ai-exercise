@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -46,7 +47,9 @@ public final class MainActivity extends Activity
     private static final int ACCENT = Color.rgb(72, 184, 199);
     private static final int WARNING = Color.rgb(239, 108, 108);
     private static final int PHOTO_PAGE = 2;
-    private static final long PHOTO_INTERVAL_MS = 30000;
+    private static final long PHOTO_INTERVAL_MS = 45000;
+    private static final long PHOTO_PAN_DURATION_MS = PHOTO_INTERVAL_MS - 2000;
+    private static final long PHOTO_PAN_FRAME_MS = 33;
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
 
     private final List<Button> actionButtons = new ArrayList<Button>();
@@ -77,6 +80,7 @@ public final class MainActivity extends Activity
     private Bitmap pendingPhotoBitmap;
     private final List<File> photoFiles = new ArrayList<File>();
     private final Handler photoHandler = new Handler();
+    private final Matrix photoMatrix = new Matrix();
     private final SimpleDateFormat photoTimeFormat =
             new SimpleDateFormat("HH:mm", Locale.TAIWAN);
     private final SimpleDateFormat photoDateFormat =
@@ -85,7 +89,9 @@ public final class MainActivity extends Activity
     private int photoFailures;
     private int photoGeneration;
     private boolean photoLoading;
+    private boolean photoPanReverse = true;
     private boolean activityResumed;
+    private long photoPanStartedAt;
     private long nextPhotoAt;
     private ImageView apodImage;
     private TextView apodImageStatus;
@@ -111,6 +117,21 @@ public final class MainActivity extends Activity
                 loadNextPhoto();
             }
             photoHandler.postDelayed(this, 1000);
+        }
+    };
+
+    private final Runnable photoPanTicker = new Runnable() {
+        @Override
+        public void run() {
+            if (!activityResumed || currentPage != PHOTO_PAGE || photoBitmap == null) {
+                return;
+            }
+            long elapsed = SystemClock.elapsedRealtime() - photoPanStartedAt;
+            float progress = Math.min(1.0f, (float) elapsed / PHOTO_PAN_DURATION_MS);
+            applyPhotoPan(progress);
+            if (progress < 1.0f) {
+                photoHandler.postDelayed(this, PHOTO_PAN_FRAME_MS);
+            }
         }
     };
 
@@ -260,7 +281,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.4.1", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.4.2", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -338,7 +359,7 @@ public final class MainActivity extends Activity
         page.setBackgroundColor(Color.BLACK);
 
         photoImage = new ImageView(this);
-        photoImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        photoImage.setScaleType(ImageView.ScaleType.MATRIX);
         page.addView(photoImage, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
@@ -376,7 +397,7 @@ public final class MainActivity extends Activity
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM | Gravity.RIGHT);
-        clockParams.setMargins(dp(28), dp(28), dp(28), dp(28));
+        clockParams.setMargins(dp(28), dp(28), dp(28), dp(12));
         page.addView(clockPanel, clockParams);
         updatePhotoClock();
         return page;
@@ -668,6 +689,7 @@ public final class MainActivity extends Activity
 
     private void stopPhotoSlideshow() {
         photoHandler.removeCallbacks(photoTicker);
+        photoHandler.removeCallbacks(photoPanTicker);
         photoGeneration++;
         photoLoading = false;
         if (photoImage != null) {
@@ -683,6 +705,60 @@ public final class MainActivity extends Activity
             pendingPhotoBitmap.recycle();
             pendingPhotoBitmap = null;
         }
+    }
+
+    private void startPhotoPan() {
+        photoHandler.removeCallbacks(photoPanTicker);
+        if (photoImage == null || photoBitmap == null
+                || photoImage.getWidth() <= 0 || photoImage.getHeight() <= 0) {
+            return;
+        }
+        photoPanReverse = !photoPanReverse;
+        photoPanStartedAt = SystemClock.elapsedRealtime();
+        applyPhotoPan(0.0f);
+        photoHandler.postDelayed(photoPanTicker, PHOTO_PAN_FRAME_MS);
+    }
+
+    private void stopPhotoPan() {
+        photoHandler.removeCallbacks(photoPanTicker);
+    }
+
+    private void applyPhotoPan(float progress) {
+        if (photoImage == null || photoBitmap == null) {
+            return;
+        }
+        int viewWidth = photoImage.getWidth();
+        int viewHeight = photoImage.getHeight();
+        int bitmapWidth = photoBitmap.getWidth();
+        int bitmapHeight = photoBitmap.getHeight();
+        if (viewWidth <= 0 || viewHeight <= 0 || bitmapWidth <= 0 || bitmapHeight <= 0) {
+            return;
+        }
+
+        float scale = Math.max(
+                (float) viewWidth / bitmapWidth,
+                (float) viewHeight / bitmapHeight);
+        float scaledWidth = bitmapWidth * scale;
+        float scaledHeight = bitmapHeight * scale;
+        float overflowX = Math.max(0.0f, scaledWidth - viewWidth);
+        float overflowY = Math.max(0.0f, scaledHeight - viewHeight);
+        float smoothProgress = progress * progress * (3.0f - 2.0f * progress);
+        float position = photoPanReverse ? 1.0f - smoothProgress : smoothProgress;
+
+        float translateX;
+        float translateY;
+        if (overflowX >= overflowY) {
+            translateX = -overflowX * position;
+            translateY = -overflowY / 2.0f;
+        } else {
+            translateX = -overflowX / 2.0f;
+            translateY = -overflowY * position;
+        }
+
+        photoMatrix.reset();
+        photoMatrix.setScale(scale, scale);
+        photoMatrix.postTranslate(translateX, translateY);
+        photoImage.setImageMatrix(photoMatrix);
     }
 
     private void updatePhotoClock() {
@@ -817,8 +893,9 @@ public final class MainActivity extends Activity
         if (photoBitmap == null) {
             photoBitmap = bitmap;
             photoImage.setImageBitmap(bitmap);
+            startPhotoPan();
             photoImage.setAlpha(0.0f);
-            photoImage.animate().alpha(1.0f).setDuration(700).start();
+            photoImage.animate().alpha(1.0f).setDuration(1200).start();
             return;
         }
 
@@ -829,8 +906,9 @@ public final class MainActivity extends Activity
         }
         pendingPhotoBitmap = bitmap;
         final int generation = photoGeneration;
+        stopPhotoPan();
         photoImage.animate().cancel();
-        photoImage.animate().alpha(0.0f).setDuration(350).withEndAction(new Runnable() {
+        photoImage.animate().alpha(0.0f).setDuration(800).withEndAction(new Runnable() {
             @Override
             public void run() {
                 if (generation != photoGeneration
@@ -849,10 +927,11 @@ public final class MainActivity extends Activity
                 photoBitmap = bitmap;
                 pendingPhotoBitmap = null;
                 photoImage.setImageBitmap(bitmap);
+                startPhotoPan();
                 if (previous != null && previous != bitmap && !previous.isRecycled()) {
                     previous.recycle();
                 }
-                photoImage.animate().alpha(1.0f).setDuration(650).start();
+                photoImage.animate().alpha(1.0f).setDuration(1200).start();
             }
         }).start();
     }
