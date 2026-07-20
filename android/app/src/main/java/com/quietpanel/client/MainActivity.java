@@ -53,6 +53,8 @@ public final class MainActivity extends Activity
     private final DiskRow[] diskRows = new DiskRow[4];
     private TransportServer transport;
     private ApodServer apodServer;
+    private LinearLayout appRoot;
+    private LinearLayout appHeader;
     private SwipePager pager;
     private TextView connectionText;
     private TextView pageIndicator;
@@ -69,12 +71,16 @@ public final class MainActivity extends Activity
     private TextView uploadValue;
     private ImageView photoImage;
     private TextView photoStatus;
-    private TextView photoClock;
+    private TextView photoTime;
+    private TextView photoDate;
     private Bitmap photoBitmap;
+    private Bitmap pendingPhotoBitmap;
     private final List<File> photoFiles = new ArrayList<File>();
     private final Handler photoHandler = new Handler();
-    private final SimpleDateFormat photoClockFormat =
-            new SimpleDateFormat("yyyy/MM/dd  HH:mm:ss", Locale.TAIWAN);
+    private final SimpleDateFormat photoTimeFormat =
+            new SimpleDateFormat("HH:mm", Locale.TAIWAN);
+    private final SimpleDateFormat photoDateFormat =
+            new SimpleDateFormat("M月d日 EEEE", Locale.TAIWAN);
     private int photoIndex;
     private int photoFailures;
     private int photoGeneration;
@@ -247,19 +253,19 @@ public final class MainActivity extends Activity
     }
 
     private View buildInterface() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(BACKGROUND);
-        root.setPadding(dp(12), dp(8), dp(12), dp(6));
+        appRoot = new LinearLayout(this);
+        appRoot.setOrientation(LinearLayout.VERTICAL);
+        appRoot.setBackgroundColor(BACKGROUND);
+        appRoot.setPadding(dp(12), dp(8), dp(12), dp(6));
 
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.4", 22, PRIMARY, Gravity.START);
+        appHeader = new LinearLayout(this);
+        appHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = makeText("QUIETPANEL  v6.4.1", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
-        header.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
-        header.addView(connectionText, new LinearLayout.LayoutParams(0, dp(54), 1));
-        root.addView(header, new LinearLayout.LayoutParams(
+        appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
+        appHeader.addView(connectionText, new LinearLayout.LayoutParams(0, dp(54), 1));
+        appRoot.addView(appHeader, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
 
         pager = new SwipePager(this);
@@ -275,15 +281,15 @@ public final class MainActivity extends Activity
                 showPage(currentPage + direction);
             }
         });
-        root.addView(pager, new LinearLayout.LayoutParams(
+        appRoot.addView(pager, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         pageIndicator = makeText("", 14, SECONDARY, Gravity.CENTER);
-        root.addView(pageIndicator, new LinearLayout.LayoutParams(
+        appRoot.addView(pageIndicator, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(30)));
         showPage(0);
 
-        return root;
+        return appRoot;
     }
 
     private View buildSystemPage() {
@@ -332,7 +338,7 @@ public final class MainActivity extends Activity
         page.setBackgroundColor(Color.BLACK);
 
         photoImage = new ImageView(this);
-        photoImage.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        photoImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
         page.addView(photoImage, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
@@ -347,16 +353,31 @@ public final class MainActivity extends Activity
                 Gravity.CENTER);
         page.addView(photoStatus, statusParams);
 
-        photoClock = makeText("", 20, PRIMARY, Gravity.CENTER);
-        photoClock.setTypeface(Typeface.DEFAULT_BOLD);
-        photoClock.setBackgroundColor(Color.argb(155, 0, 0, 0));
-        photoClock.setPadding(dp(12), dp(6), dp(12), dp(6));
+        LinearLayout clockPanel = new LinearLayout(this);
+        clockPanel.setOrientation(LinearLayout.VERTICAL);
+        clockPanel.setGravity(Gravity.RIGHT);
+        clockPanel.setPadding(dp(18), dp(10), dp(18), dp(12));
+        clockPanel.setBackground(rounded(Color.argb(105, 0, 0, 0)));
+
+        photoTime = makeText("", 64, Color.WHITE, Gravity.RIGHT);
+        photoTime.setTypeface(Typeface.DEFAULT_BOLD);
+        photoTime.setShadowLayer(dp(3), dp(1), dp(1), Color.BLACK);
+        clockPanel.addView(photoTime, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        photoDate = makeText("", 24, Color.WHITE, Gravity.RIGHT);
+        photoDate.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+        clockPanel.addView(photoDate, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
         FrameLayout.LayoutParams clockParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM | Gravity.RIGHT);
-        clockParams.setMargins(dp(12), dp(12), dp(12), dp(12));
-        page.addView(photoClock, clockParams);
+        clockParams.setMargins(dp(28), dp(28), dp(28), dp(28));
+        page.addView(clockPanel, clockParams);
         updatePhotoClock();
         return page;
     }
@@ -601,6 +622,14 @@ public final class MainActivity extends Activity
         }
         currentPage = Math.max(0, Math.min(5, requestedPage));
         pager.setDisplayedChild(currentPage);
+        boolean photoFullScreen = currentPage == PHOTO_PAGE;
+        appHeader.setVisibility(photoFullScreen ? View.GONE : View.VISIBLE);
+        pageIndicator.setVisibility(photoFullScreen ? View.GONE : View.VISIBLE);
+        if (photoFullScreen) {
+            appRoot.setPadding(0, 0, 0, 0);
+        } else {
+            appRoot.setPadding(dp(12), dp(8), dp(12), dp(6));
+        }
         if (currentPage == PHOTO_PAGE && activityResumed) {
             startPhotoSlideshow();
         }
@@ -642,17 +671,27 @@ public final class MainActivity extends Activity
         photoGeneration++;
         photoLoading = false;
         if (photoImage != null) {
+            photoImage.animate().cancel();
             photoImage.setImageDrawable(null);
+            photoImage.setAlpha(1.0f);
         }
         if (photoBitmap != null && !photoBitmap.isRecycled()) {
             photoBitmap.recycle();
             photoBitmap = null;
         }
+        if (pendingPhotoBitmap != null && !pendingPhotoBitmap.isRecycled()) {
+            pendingPhotoBitmap.recycle();
+            pendingPhotoBitmap = null;
+        }
     }
 
     private void updatePhotoClock() {
-        if (photoClock != null) {
-            photoClock.setText(photoClockFormat.format(new Date()));
+        Date now = new Date();
+        if (photoTime != null) {
+            photoTime.setText(photoTimeFormat.format(now));
+        }
+        if (photoDate != null) {
+            photoDate.setText(photoDateFormat.format(now));
         }
     }
 
@@ -773,14 +812,49 @@ public final class MainActivity extends Activity
         }
     }
 
-    private void displayPhoto(Bitmap bitmap) {
-        Bitmap previous = photoBitmap;
-        photoBitmap = bitmap;
-        photoImage.setImageBitmap(bitmap);
+    private void displayPhoto(final Bitmap bitmap) {
         photoStatus.setVisibility(View.GONE);
-        if (previous != null && previous != bitmap && !previous.isRecycled()) {
-            previous.recycle();
+        if (photoBitmap == null) {
+            photoBitmap = bitmap;
+            photoImage.setImageBitmap(bitmap);
+            photoImage.setAlpha(0.0f);
+            photoImage.animate().alpha(1.0f).setDuration(700).start();
+            return;
         }
+
+        if (pendingPhotoBitmap != null
+                && pendingPhotoBitmap != bitmap
+                && !pendingPhotoBitmap.isRecycled()) {
+            pendingPhotoBitmap.recycle();
+        }
+        pendingPhotoBitmap = bitmap;
+        final int generation = photoGeneration;
+        photoImage.animate().cancel();
+        photoImage.animate().alpha(0.0f).setDuration(350).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                if (generation != photoGeneration
+                        || currentPage != PHOTO_PAGE
+                        || !activityResumed) {
+                    if (pendingPhotoBitmap == bitmap) {
+                        pendingPhotoBitmap = null;
+                    }
+                    if (!bitmap.isRecycled()) {
+                        bitmap.recycle();
+                    }
+                    return;
+                }
+
+                Bitmap previous = photoBitmap;
+                photoBitmap = bitmap;
+                pendingPhotoBitmap = null;
+                photoImage.setImageBitmap(bitmap);
+                if (previous != null && previous != bitmap && !previous.isRecycled()) {
+                    previous.recycle();
+                }
+                photoImage.animate().alpha(1.0f).setDuration(650).start();
+            }
+        }).start();
     }
 
     private void showPhotoStatus(String message, int color) {
