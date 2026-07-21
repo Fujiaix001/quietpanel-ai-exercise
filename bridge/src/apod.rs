@@ -1,12 +1,14 @@
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
 use serde_json::{json, Value};
+
+use crate::protocol::TRANSPORT_TOKEN;
 
 const APOD_PORT: u16 = 27184;
 const API_URL: &str = "https://api.nasa.gov/planetary/apod";
@@ -20,9 +22,9 @@ struct Payload {
     image: Vec<u8>,
 }
 
-pub fn deliver() {
+pub fn deliver(address: SocketAddr) {
     match load_or_refresh() {
-        Ok(payload) => match push_to_android(&payload) {
+        Ok(payload) => match push_to_android(address, &payload) {
             Ok(()) => println!("NASA APOD delivered to Android"),
             Err(error) => eprintln!("NASA APOD delivery skipped: {error}"),
         },
@@ -134,8 +136,8 @@ fn required_text<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("NASA response is missing {field}"))
 }
 
-fn push_to_android(payload: &Payload) -> io::Result<()> {
-    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), APOD_PORT);
+fn push_to_android(mut address: SocketAddr, payload: &Payload) -> io::Result<()> {
+    address.set_port(APOD_PORT);
     let mut last_error = None;
 
     for _ in 0..CONNECT_RETRIES {
@@ -144,6 +146,7 @@ fn push_to_android(payload: &Payload) -> io::Result<()> {
                 stream.set_write_timeout(Some(Duration::from_secs(15)))?;
                 stream.set_nodelay(true)?;
                 stream.write_all(b"QPAP")?;
+                stream.write_all(TRANSPORT_TOKEN.as_bytes())?;
                 stream.write_all(&(payload.metadata.len() as u32).to_be_bytes())?;
                 stream.write_all(&(payload.image.len() as u32).to_be_bytes())?;
                 stream.write_all(&payload.metadata)?;

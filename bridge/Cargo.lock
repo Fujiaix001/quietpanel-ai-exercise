@@ -272,7 +272,7 @@ dependencies = [
 
 [[package]]
 name = "quietpanel-bridge"
-version = "6.5.0"
+version = "7.0.0"
 dependencies = [
  "serde_json",
  "sysinfo",

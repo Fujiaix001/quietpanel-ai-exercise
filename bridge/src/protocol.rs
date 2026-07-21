@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
-pub const VERSION: &str = "6.5.0";
+pub const VERSION: &str = "7.0.0";
+pub const TRANSPORT_TOKEN: &str = "qp7-usb-4d2c8a1f-6be0-49d5-91a3";
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ActionRequest {
@@ -14,6 +15,7 @@ pub fn hello() -> Value {
         "type": "hello",
         "server": "QuietPanel Bridge",
         "version": VERSION,
+        "token": TRANSPORT_TOKEN,
     })
 }
 
@@ -73,7 +75,15 @@ pub fn parse_action(line: &str) -> Result<Option<ActionRequest>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{page_config, parse_action, ActionRequest};
+    use super::{hello, page_config, parse_action, ActionRequest, TRANSPORT_TOKEN};
+
+    #[test]
+    fn hello_includes_the_pairing_token() {
+        assert_eq!(
+            hello().get("token").and_then(serde_json::Value::as_str),
+            Some(TRANSPORT_TOKEN)
+        );
+    }
 
     #[test]
     fn parses_action_message() {
