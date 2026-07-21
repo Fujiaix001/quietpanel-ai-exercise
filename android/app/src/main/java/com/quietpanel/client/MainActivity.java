@@ -77,9 +77,13 @@ public final class MainActivity extends Activity
     private HistoryGraphView memoryHistory;
     private HistoryGraphView downloadHistory;
     private HistoryGraphView uploadHistory;
+    private HistoryGraphView diskReadHistory;
+    private HistoryGraphView diskWriteHistory;
     private TextView memoryValue;
     private TextView downloadValue;
     private TextView uploadValue;
+    private TextView diskReadValue;
+    private TextView diskWriteValue;
     private ImageView photoImage;
     private TextView photoStatus;
     private TextView photoTime;
@@ -370,14 +374,22 @@ public final class MainActivity extends Activity
         memoryHistory = memory.history;
 
         LinearLayout secondRow = metricRow();
-        MetricCard download = addMetric(
-                secondRow, "NETWORK  ↓", "-- MB/s", Color.rgb(41, 182, 246), false);
         MetricCard upload = addMetric(
                 secondRow, "NETWORK  ↑", "-- MB/s", Color.rgb(102, 187, 106), false);
+        MetricCard download = addMetric(
+                secondRow, "NETWORK  ↓", "-- MB/s", Color.rgb(41, 182, 246), false);
+        MetricCard diskRead = addMetric(
+                secondRow, "DISK  READ", "-- MB/s", Color.rgb(255, 167, 38), false);
+        MetricCard diskWrite = addMetric(
+                secondRow, "DISK  WRITE", "-- MB/s", Color.rgb(171, 71, 188), false);
         downloadValue = download.value;
         uploadValue = upload.value;
+        diskReadValue = diskRead.value;
+        diskWriteValue = diskWrite.value;
         downloadHistory = download.history;
         uploadHistory = upload.history;
+        diskReadHistory = diskRead.history;
+        diskWriteHistory = diskWrite.history;
 
         page.addView(firstRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
@@ -662,15 +674,21 @@ public final class MainActivity extends Activity
         double memory = system.optDouble("ramPercent", 0);
         double download = system.optDouble("networkDownMBps", 0);
         double upload = system.optDouble("networkUpMBps", 0);
+        double diskRead = system.optDouble("diskReadMBps", 0);
+        double diskWrite = system.optDouble("diskWriteMBps", 0);
 
         cpuValue.setText(format(cpu) + " %");
         memoryValue.setText(format(memory) + " %");
         downloadValue.setText(format(download) + " MB/s");
         uploadValue.setText(format(upload) + " MB/s");
+        diskReadValue.setText(format(diskRead) + " MB/s");
+        diskWriteValue.setText(format(diskWrite) + " MB/s");
         cpuHistory.addSample(cpu);
         memoryHistory.addSample(memory);
         downloadHistory.addSample(download);
         uploadHistory.addSample(upload);
+        diskReadHistory.addSample(diskRead);
+        diskWriteHistory.addSample(diskWrite);
         updateCpuWarning(cpu);
     }
 

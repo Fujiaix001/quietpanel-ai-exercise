@@ -32,6 +32,7 @@ impl Metrics {
     pub fn snapshot(&mut self) -> Value {
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
+        self.system.refresh_processes();
         self.networks.refresh();
         self.disks.refresh();
 
@@ -62,6 +63,20 @@ impl Metrics {
         self.last_rx = current_rx;
         self.last_tx = current_tx;
 
+        let (disk_read_bytes, disk_write_bytes) = self
+            .system
+            .processes()
+            .values()
+            .fold((0_u64, 0_u64), |(read, written), process| {
+                let usage = process.disk_usage();
+                (
+                    read.saturating_add(usage.read_bytes),
+                    written.saturating_add(usage.written_bytes),
+                )
+            });
+        let disk_read_mbps = disk_read_bytes as f64 / elapsed / 1_048_576.0;
+        let disk_write_mbps = disk_write_bytes as f64 / elapsed / 1_048_576.0;
+
         let disks: Vec<Value> = self
             .disks
             .list()
@@ -85,6 +100,8 @@ impl Metrics {
                 "ramPercent": round_one(ram_percent),
                 "networkDownMBps": round_one(down_mbps),
                 "networkUpMBps": round_one(up_mbps),
+                "diskReadMBps": round_one(disk_read_mbps),
+                "diskWriteMBps": round_one(disk_write_mbps),
             },
             "disks": disks,
         })
