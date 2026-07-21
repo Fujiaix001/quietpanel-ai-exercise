@@ -452,11 +452,18 @@ public final class MainActivity extends Activity
         photoFolderButton = new Button(this);
         photoFolderButton.setText("相簿資料夾");
         photoFolderButton.setTextColor(Color.WHITE);
-        photoFolderButton.setTextSize(13);
+        photoFolderButton.setTextSize(17);
         photoFolderButton.setAllCaps(false);
         photoFolderButton.setAlpha(0.0f);
         photoFolderButton.setVisibility(View.GONE);
-        photoFolderButton.setBackground(makeButtonBackground(Color.rgb(35, 52, 62)));
+        StateListDrawable photoFolderBackground = new StateListDrawable();
+        photoFolderBackground.addState(
+                new int[] { android.R.attr.state_pressed },
+                rounded(Color.argb(110, 70, 90, 100)));
+        photoFolderBackground.addState(
+                new int[] {},
+                rounded(Color.argb(68, 35, 52, 62)));
+        photoFolderButton.setBackground(photoFolderBackground);
         photoFolderButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
