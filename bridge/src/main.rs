@@ -1,9 +1,13 @@
+#![windows_subsystem = "windows"]
+
 mod actions;
 mod adb;
 mod apod;
 mod display;
 mod metrics;
 mod protocol;
+mod settings;
+mod tray;
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
@@ -29,9 +33,15 @@ fn main() {
 
     let mut reporter = StatusReporter::default();
     let mut display_monitor = display::DisplayMonitor::start();
+    let mut pages = settings::load_pages();
+    let tray = tray::TrayController::start(pages);
     println!("PC display monitor: active");
 
-    loop {
+    while tray.is_running() {
+        if let Some(changed) = tray.take_changed() {
+            pages = changed;
+            settings::save_pages(&pages);
+        }
         let serial = match adb.single_device() {
             Ok(serial) => serial,
             Err(error) => {
@@ -57,7 +67,14 @@ fn main() {
             }
         };
 
-        let _ = run_session(stream, &mut reporter, &serial, &mut display_monitor);
+        let _ = run_session(
+            stream,
+            &mut reporter,
+            &serial,
+            &mut display_monitor,
+            &tray,
+            &mut pages,
+        );
         reporter.report(&format!("Waiting for Android app ({serial})"));
         thread::sleep(RETRY_DELAY);
     }
@@ -68,6 +85,8 @@ fn run_session(
     reporter: &mut StatusReporter,
     serial: &str,
     display_monitor: &mut display::DisplayMonitor,
+    tray: &tray::TrayController,
+    pages: &mut [bool; settings::PAGE_COUNT],
 ) -> io::Result<()> {
     writer.set_nodelay(true)?;
     writer.set_write_timeout(Some(Duration::from_secs(3)))?;
@@ -81,6 +100,7 @@ fn run_session(
         &mut writer,
         &protocol::display_state(display_monitor.current()),
     )?;
+    write_json(&mut writer, &protocol::page_config(pages))?;
     thread::spawn(apod::deliver);
 
     let mut metrics = Metrics::new();
@@ -90,6 +110,14 @@ fn run_session(
     let mut handshake_complete = false;
 
     loop {
+        if !tray.is_running() {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "Bridge stopped"));
+        }
+        if let Some(changed) = tray.take_changed() {
+            *pages = changed;
+            settings::save_pages(pages);
+            write_json(&mut writer, &protocol::page_config(pages))?;
+        }
         if let Some(display_on) = display_monitor.take_changed() {
             println!("PC display: {}", if display_on { "on" } else { "off" });
             write_json(&mut writer, &protocol::display_state(display_on))?;

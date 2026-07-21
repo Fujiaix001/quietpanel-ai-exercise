@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-pub const VERSION: &str = "6.4.5";
+pub const VERSION: &str = "6.5.0";
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ActionRequest {
@@ -23,6 +23,15 @@ pub fn ping() -> Value {
 
 pub fn display_state(display_on: bool) -> Value {
     json!({ "v": 1, "type": "display_state", "on": display_on })
+}
+
+pub fn page_config(pages: &[bool]) -> Value {
+    let enabled: Vec<usize> = pages
+        .iter()
+        .enumerate()
+        .filter_map(|(index, is_enabled)| is_enabled.then_some(index))
+        .collect();
+    json!({ "v": 1, "type": "page_config", "enabled": enabled })
 }
 
 pub fn action_result(id: u64, ok: bool, message: &str) -> Value {
@@ -64,7 +73,7 @@ pub fn parse_action(line: &str) -> Result<Option<ActionRequest>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_action, ActionRequest};
+    use super::{page_config, parse_action, ActionRequest};
 
     #[test]
     fn parses_action_message() {
@@ -80,5 +89,13 @@ mod tests {
     #[test]
     fn ignores_non_action_message() {
         assert_eq!(parse_action(r#"{"v":1,"type":"pong"}"#).unwrap(), None);
+    }
+
+    #[test]
+    fn builds_page_configuration() {
+        assert_eq!(
+            page_config(&[true, false, true]),
+            serde_json::json!({"v":1,"type":"page_config","enabled":[0,2]})
+        );
     }
 }

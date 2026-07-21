@@ -21,6 +21,7 @@ public final class TransportServer {
         void onStateReceived(JSONObject system, JSONArray disks);
         void onActionResult(long id, boolean ok, String message);
         void onDisplayStateChanged(boolean displayOn);
+        void onPageConfigReceived(JSONArray enabledPages);
     }
 
     private final Listener listener;
@@ -171,10 +172,12 @@ public final class TransportServer {
                 JSONObject acknowledgement = new JSONObject();
                 acknowledgement.put("v", 1);
                 acknowledgement.put("type", "hello_ack");
-                acknowledgement.put("version", "6.4.5");
+                acknowledgement.put("version", "6.5.0");
                 writeMessage(acknowledgement);
             } else if ("display_state".equals(type)) {
                 listener.onDisplayStateChanged(message.optBoolean("on", true));
+            } else if ("page_config".equals(type)) {
+                listener.onPageConfigReceived(message.optJSONArray("enabled"));
             } else if ("state".equals(type)) {
                 listener.onStateReceived(
                         message.optJSONObject("system"),

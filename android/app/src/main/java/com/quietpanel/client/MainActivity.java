@@ -2,6 +2,7 @@ package com.quietpanel.client;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -36,8 +37,11 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public final class MainActivity extends Activity
         implements TransportServer.Listener, ApodServer.Listener {
@@ -48,11 +52,13 @@ public final class MainActivity extends Activity
     private static final int ACCENT = Color.rgb(72, 184, 199);
     private static final int WARNING = Color.rgb(239, 108, 108);
     private static final int PHOTO_PAGE = 2;
+    private static final int PAGE_COUNT = 6;
     private static final long PHOTO_INTERVAL_MS = 45000;
     private static final long PHOTO_PAN_DURATION_MS = PHOTO_INTERVAL_MS - 2000;
     private static final long PHOTO_PAN_FRAME_MS = 67;
     private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.20f;
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
+    private static final int MAX_PHOTO_FILES = 10000;
 
     private final List<Button> actionButtons = new ArrayList<Button>();
     private final DiskRow[] diskRows = new DiskRow[4];
@@ -78,6 +84,7 @@ public final class MainActivity extends Activity
     private TextView photoStatus;
     private TextView photoTime;
     private TextView photoDate;
+    private Button photoFolderButton;
     private Bitmap photoBitmap;
     private Bitmap pendingPhotoBitmap;
     private final List<File> photoFiles = new ArrayList<File>();
@@ -108,6 +115,7 @@ public final class MainActivity extends Activity
     private long highCpuStartedAt = -1;
     private boolean cpuWarning;
     private boolean diskWarning;
+    private final boolean[] pageEnabled = { true, true, true, true, true, true };
 
     private final Runnable photoTicker = new Runnable() {
         @Override
@@ -136,6 +144,13 @@ public final class MainActivity extends Activity
             if (progress < 1.0f) {
                 photoHandler.postDelayed(this, PHOTO_PAN_FRAME_MS);
             }
+        }
+    };
+
+    private final Runnable photoFolderButtonHider = new Runnable() {
+        @Override
+        public void run() {
+            hidePhotoFolderButton();
         }
     };
 
@@ -260,6 +275,16 @@ public final class MainActivity extends Activity
     }
 
     @Override
+    public void onPageConfigReceived(final JSONArray enabledPages) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                applyPageConfig(enabledPages);
+            }
+        });
+    }
+
+    @Override
     public void onApodReceived(final JSONObject metadata, final byte[] imageBytes) {
         final String date = metadata.optString("date", "");
         if (date.equals(displayedApodDate) && apodBitmap != null) {
@@ -298,7 +323,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.4.5", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.5.0", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -316,7 +341,7 @@ public final class MainActivity extends Activity
         pager.setListener(new SwipePager.Listener() {
             @Override
             public void onSwipe(int direction) {
-                showPage(currentPage + direction);
+                showAdjacentPage(direction);
             }
         });
         appRoot.addView(pager, new LinearLayout.LayoutParams(
@@ -372,8 +397,15 @@ public final class MainActivity extends Activity
     }
 
     private View buildPhotoPage() {
-        FrameLayout page = new FrameLayout(this);
+        final FrameLayout page = new FrameLayout(this);
         page.setBackgroundColor(Color.BLACK);
+        page.setClickable(true);
+        page.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showPhotoFolderButton();
+            }
+        });
 
         photoImage = new ImageView(this);
         photoImage.setScaleType(ImageView.ScaleType.MATRIX);
@@ -382,7 +414,7 @@ public final class MainActivity extends Activity
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
         photoStatus = makeText(
-                "將照片放入 /sdcard/" + PHOTO_DIRECTORY,
+                "點一下畫面可選擇相簿資料夾",
                 16, SECONDARY, Gravity.CENTER);
         photoStatus.setPadding(dp(24), dp(12), dp(24), dp(12));
         FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
@@ -416,6 +448,26 @@ public final class MainActivity extends Activity
                 Gravity.BOTTOM | Gravity.RIGHT);
         clockParams.setMargins(dp(28), dp(28), dp(12), dp(12));
         page.addView(clockPanel, clockParams);
+
+        photoFolderButton = new Button(this);
+        photoFolderButton.setText("相簿資料夾");
+        photoFolderButton.setTextColor(Color.WHITE);
+        photoFolderButton.setTextSize(13);
+        photoFolderButton.setAllCaps(false);
+        photoFolderButton.setAlpha(0.0f);
+        photoFolderButton.setVisibility(View.GONE);
+        photoFolderButton.setBackground(makeButtonBackground(Color.rgb(35, 52, 62)));
+        photoFolderButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                photoHandler.removeCallbacks(photoFolderButtonHider);
+                startActivity(new Intent(MainActivity.this, PhotoFolderActivity.class));
+            }
+        });
+        FrameLayout.LayoutParams folderButtonParams = new FrameLayout.LayoutParams(
+                dp(150), dp(48), Gravity.TOP | Gravity.LEFT);
+        folderButtonParams.setMargins(dp(12), dp(12), 0, 0);
+        page.addView(photoFolderButton, folderButtonParams);
         updatePhotoClock();
         return page;
     }
@@ -655,10 +707,14 @@ public final class MainActivity extends Activity
     }
 
     private void showPage(int requestedPage) {
+        if (requestedPage < 0 || requestedPage >= PAGE_COUNT || !pageEnabled[requestedPage]) {
+            requestedPage = firstEnabledPage();
+        }
         if (currentPage == PHOTO_PAGE) {
             stopPhotoSlideshow();
+            hidePhotoFolderButtonImmediately();
         }
-        currentPage = Math.max(0, Math.min(5, requestedPage));
+        currentPage = requestedPage;
         pager.setDisplayedChild(currentPage);
         boolean photoFullScreen = currentPage == PHOTO_PAGE;
         appHeader.setVisibility(photoFullScreen ? View.GONE : View.VISIBLE);
@@ -674,14 +730,96 @@ public final class MainActivity extends Activity
         updatePageIndicator();
     }
 
+    private void showPhotoFolderButton() {
+        if (photoFolderButton == null || currentPage != PHOTO_PAGE) {
+            return;
+        }
+        photoHandler.removeCallbacks(photoFolderButtonHider);
+        photoFolderButton.animate().cancel();
+        photoFolderButton.setVisibility(View.VISIBLE);
+        photoFolderButton.animate().alpha(0.82f).setDuration(180).start();
+        photoHandler.postDelayed(photoFolderButtonHider, 5000);
+    }
+
+    private void hidePhotoFolderButton() {
+        if (photoFolderButton == null || photoFolderButton.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        photoFolderButton.animate().cancel();
+        photoFolderButton.animate().alpha(0.0f).setDuration(260).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                photoFolderButton.setVisibility(View.GONE);
+            }
+        }).start();
+    }
+
+    private void hidePhotoFolderButtonImmediately() {
+        photoHandler.removeCallbacks(photoFolderButtonHider);
+        if (photoFolderButton != null) {
+            photoFolderButton.animate().cancel();
+            photoFolderButton.setAlpha(0.0f);
+            photoFolderButton.setVisibility(View.GONE);
+        }
+    }
+
+    private void showAdjacentPage(int direction) {
+        int candidate = currentPage + direction;
+        while (candidate >= 0 && candidate < PAGE_COUNT) {
+            if (pageEnabled[candidate]) {
+                showPage(candidate);
+                return;
+            }
+            candidate += direction;
+        }
+    }
+
+    private int firstEnabledPage() {
+        for (int i = 0; i < PAGE_COUNT; i++) {
+            if (pageEnabled[i]) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    private void applyPageConfig(JSONArray enabledPages) {
+        if (enabledPages == null) {
+            return;
+        }
+        boolean[] updated = new boolean[PAGE_COUNT];
+        int enabledCount = 0;
+        for (int i = 0; i < enabledPages.length(); i++) {
+            int page = enabledPages.optInt(i, -1);
+            if (page >= 0 && page < PAGE_COUNT && !updated[page]) {
+                updated[page] = true;
+                enabledCount++;
+            }
+        }
+        if (enabledCount == 0) {
+            return;
+        }
+        System.arraycopy(updated, 0, pageEnabled, 0, PAGE_COUNT);
+        if (!pageEnabled[currentPage]) {
+            showPage(firstEnabledPage());
+        } else {
+            updatePageIndicator();
+        }
+    }
+
     private void updatePageIndicator() {
         String[] labels = { "系統", "儲存", "相簿", "NASA", "MACRO", "快捷" };
         StringBuilder dots = new StringBuilder();
+        boolean first = true;
         for (int i = 0; i < labels.length; i++) {
-            dots.append(i == currentPage ? "●" : "○");
-            if (i < labels.length - 1) {
+            if (!pageEnabled[i]) {
+                continue;
+            }
+            if (!first) {
                 dots.append("   ");
             }
+            dots.append(i == currentPage ? "●" : "○");
+            first = false;
         }
         dots.append("     ").append(labels[currentPage]);
         if (cpuWarning) {
@@ -861,29 +999,81 @@ public final class MainActivity extends Activity
         photoIndex = 0;
         photoFailures = 0;
 
-        File directory = new File(
-                Environment.getExternalStorageDirectory(), PHOTO_DIRECTORY);
-        if (!directory.exists() && !directory.mkdirs()) {
-            showPhotoStatus("無法建立照片資料夾\n" + directory.getAbsolutePath(), WARNING);
-            return;
+        Set<String> selectedFolders = getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
+                .getStringSet(PhotoFolderActivity.PHOTO_FOLDERS, null);
+        if (selectedFolders == null || selectedFolders.isEmpty()) {
+            File defaultDirectory = new File(
+                    Environment.getExternalStorageDirectory(), PHOTO_DIRECTORY);
+            if (!defaultDirectory.exists() && !defaultDirectory.mkdirs()) {
+                showPhotoStatus(
+                        "無法建立預設照片資料夾\n" + defaultDirectory.getAbsolutePath(),
+                        WARNING);
+                return;
+            }
+            selectedFolders = new HashSet<String>();
+            selectedFolders.add(defaultDirectory.getAbsolutePath());
         }
 
-        File[] entries = directory.listFiles();
-        if (entries != null) {
-            for (File entry : entries) {
-                if (entry.isFile() && isSupportedPhoto(entry.getName())) {
-                    photoFiles.add(entry);
-                }
+        Set<String> visitedDirectories = new HashSet<String>();
+        Set<String> discoveredPhotos = new LinkedHashSet<String>();
+        for (String path : selectedFolders) {
+            collectPhotoFiles(
+                    new File(path), visitedDirectories, discoveredPhotos, 0);
+            if (discoveredPhotos.size() >= MAX_PHOTO_FILES) {
+                break;
             }
+        }
+        for (String path : discoveredPhotos) {
+            photoFiles.add(new File(path));
         }
         Collections.shuffle(photoFiles);
         if (photoFiles.isEmpty()) {
             showPhotoStatus(
-                    "相簿中沒有照片\n請將 JPG 或 PNG 放入\n"
-                            + directory.getAbsolutePath(),
+                    "選擇的資料夾沒有可播放照片\n"
+                            + "請點一下畫面，再選擇「相簿資料夾」",
                     SECONDARY);
         } else {
-            showPhotoStatus("正在載入相簿…", SECONDARY);
+            showPhotoStatus(
+                    "正在載入 " + photoFiles.size() + " 張照片…", SECONDARY);
+        }
+    }
+
+    private void collectPhotoFiles(
+            File directory,
+            Set<String> visitedDirectories,
+            Set<String> discoveredPhotos,
+            int depth) {
+        if (directory == null || !directory.isDirectory()
+                || depth > 12 || discoveredPhotos.size() >= MAX_PHOTO_FILES) {
+            return;
+        }
+        String directoryPath = canonicalPath(directory);
+        if (!visitedDirectories.add(directoryPath)) {
+            return;
+        }
+        File[] entries = directory.listFiles();
+        if (entries == null) {
+            return;
+        }
+        for (File entry : entries) {
+            if (discoveredPhotos.size() >= MAX_PHOTO_FILES) {
+                return;
+            }
+            if (entry.isDirectory() && !entry.getName().startsWith(".")) {
+                collectPhotoFiles(
+                        entry, visitedDirectories, discoveredPhotos, depth + 1);
+            } else if (entry.isFile() && isSupportedPhoto(entry.getName())) {
+                discoveredPhotos.add(canonicalPath(entry));
+            }
+        }
+    }
+
+    private String canonicalPath(File file) {
+        try {
+            return file.getCanonicalPath();
+        } catch (Exception ignored) {
+            return file.getAbsolutePath();
         }
     }
 
