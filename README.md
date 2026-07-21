@@ -1,5 +1,7 @@
 # QuietPanel v6.5.0
 
+> 專案目前暫停於穩定的 ADB 版本。完整背景、架構、版本決策、已知問題與未來重啟方式請見 [`docs/PROJECT_CLOSEOUT_2026-07-22.md`](docs/PROJECT_CLOSEOUT_2026-07-22.md)。
+
 ## 系統匣與頁面選擇
 
 Bridge 啟動後常駐 Windows 系統匣，不再顯示主控台視窗。點選系統匣圖示會看到六個頁面的勾選選單；取消勾選的頁面會立刻從手機的左右滑動順序中移除。Bridge 至少保留一頁，設定會儲存在 Bridge 同目錄的 `QuietPanelBridge.json`。
