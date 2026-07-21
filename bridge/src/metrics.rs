@@ -63,17 +63,17 @@ impl Metrics {
         self.last_rx = current_rx;
         self.last_tx = current_tx;
 
-        let (disk_read_bytes, disk_write_bytes) =
-            self.system
-                .processes()
-                .values()
-                .fold((0_u64, 0_u64), |(read, written), process| {
-                    let usage = process.disk_usage();
-                    (
-                        read.saturating_add(usage.read_bytes),
-                        written.saturating_add(usage.written_bytes),
-                    )
-                });
+        let (disk_read_bytes, disk_write_bytes) = self
+            .system
+            .processes()
+            .values()
+            .fold((0_u64, 0_u64), |(read, written), process| {
+                let usage = process.disk_usage();
+                (
+                    read.saturating_add(usage.read_bytes),
+                    written.saturating_add(usage.written_bytes),
+                )
+            });
         let disk_read_mbps = disk_read_bytes as f64 / elapsed / 1_048_576.0;
         let disk_write_mbps = disk_write_bytes as f64 / elapsed / 1_048_576.0;
 

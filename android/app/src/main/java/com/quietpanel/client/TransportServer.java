@@ -7,6 +7,7 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -86,7 +87,8 @@ public final class TransportServer {
         try {
             ServerSocket server = new ServerSocket();
             server.setReuseAddress(true);
-            server.bind(new InetSocketAddress(PORT), 1);
+            server.bind(new InetSocketAddress(
+                    InetAddress.getByName("127.0.0.1"), PORT), 1);
 
             synchronized (this) {
                 if (!running) {
@@ -122,25 +124,17 @@ public final class TransportServer {
         try {
             socket.setKeepAlive(true);
             socket.setTcpNoDelay(true);
-            socket.setSoTimeout(5000);
             BufferedReader reader = new BufferedReader(
                     new InputStreamReader(socket.getInputStream(), "UTF-8"));
             BufferedWriter clientWriter = new BufferedWriter(
                     new OutputStreamWriter(socket.getOutputStream(), "UTF-8"));
-
-            String hello = reader.readLine();
-            if (!isAuthorizedHello(hello)) {
-                return;
-            }
-            socket.setSoTimeout(0);
 
             synchronized (this) {
                 clientSocket = socket;
                 writer = clientWriter;
             }
 
-            sendHelloAcknowledgement();
-            notifyConnection(true, "電腦已透過 USB 網路連線");
+            notifyConnection(true, "電腦已連線");
 
             String line;
             while (running && (line = reader.readLine()) != null) {
@@ -172,7 +166,15 @@ public final class TransportServer {
             }
 
             String type = message.optString("type", "");
-            if ("display_state".equals(type)) {
+            if ("hello".equals(type)) {
+                String version = message.optString("version", "?");
+                notifyConnection(true, "Rust Bridge " + version + " 已連線");
+                JSONObject acknowledgement = new JSONObject();
+                acknowledgement.put("v", 1);
+                acknowledgement.put("type", "hello_ack");
+                acknowledgement.put("version", "6.5.0");
+                writeMessage(acknowledgement);
+            } else if ("display_state".equals(type)) {
                 listener.onDisplayStateChanged(message.optBoolean("on", true));
             } else if ("page_config".equals(type)) {
                 listener.onPageConfigReceived(message.optJSONArray("enabled"));
@@ -191,29 +193,6 @@ public final class TransportServer {
                 pong.put("type", "pong");
                 writeMessage(pong);
             }
-        } catch (Exception ignored) {
-        }
-    }
-
-    private boolean isAuthorizedHello(String line) {
-        try {
-            JSONObject message = new JSONObject(line);
-            return message.optInt("v", 0) == 1
-                    && "hello".equals(message.optString("type", ""))
-                    && TransportAuth.TOKEN.equals(message.optString("token", ""));
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
-    private void sendHelloAcknowledgement() {
-        try {
-            JSONObject acknowledgement = new JSONObject();
-            acknowledgement.put("v", 1);
-            acknowledgement.put("type", "hello_ack");
-            acknowledgement.put("version", "7.0.0");
-            acknowledgement.put("token", TransportAuth.TOKEN);
-            writeMessage(acknowledgement);
         } catch (Exception ignored) {
         }
     }

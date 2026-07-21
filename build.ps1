@@ -46,19 +46,30 @@ $apkName = "QuietPanel-v{0}.apk" -f $version
 Get-ChildItem -LiteralPath $dist -Filter 'QuietPanel-v*.apk' -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -ne $apkName } |
     Remove-Item -Force
-Copy-IfDifferent -Source (Join-Path $projectRoot 'bridge\target\release\QuietPanelBridge.exe') `
-    -Destination (Join-Path $dist 'QuietPanelBridge.exe')
-Copy-IfDifferent -Source (Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk') `
-    -Destination (Join-Path $dist $apkName)
+Copy-Item -LiteralPath (Join-Path $projectRoot 'bridge\target\release\QuietPanelBridge.exe') `
+    -Destination (Join-Path $dist 'QuietPanelBridge.exe') -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk') `
+    -Destination (Join-Path $dist $apkName) -Force
 
-foreach ($legacyFile in @('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'Install-Android.cmd')) {
-    $legacyPath = Join-Path $dist $legacyFile
-    if (Test-Path -LiteralPath $legacyPath) {
-        Remove-Item -LiteralPath $legacyPath -Force
+$adbPath = $env:QUIETPANEL_ADB
+if ([string]::IsNullOrWhiteSpace($adbPath)) {
+    $adbPath = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+}
+if (-not (Test-Path -LiteralPath $adbPath)) {
+    throw 'adb.exe not found. Set QUIETPANEL_ADB to its full path.'
+}
+
+$adbDir = Split-Path -Parent $adbPath
+foreach ($file in @('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll')) {
+    $source = Join-Path $adbDir $file
+    if (-not (Test-Path -LiteralPath $source)) {
+        throw "Required ADB file not found: $source"
     }
+    Copy-IfDifferent -Source $source -Destination (Join-Path $dist $file)
 }
 
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\Start-QuietPanel.cmd') -Destination $dist -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\Install-Android.cmd') -Destination $dist -Force
 
 $hashFiles = Get-ChildItem -LiteralPath $dist -File |
     Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |

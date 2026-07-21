@@ -327,7 +327,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v7.0.0", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.5.0", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));

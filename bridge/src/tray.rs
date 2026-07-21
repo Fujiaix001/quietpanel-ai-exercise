@@ -157,7 +157,7 @@ unsafe fn add_icon(hwnd: HWND) {
         hIcon: LoadIconW(std::ptr::null_mut(), IDI_APPLICATION),
         ..Default::default()
     };
-    copy_utf16(&mut icon.szTip, "QuietPanel Bridge v7.0.0 正在執行");
+    copy_utf16(&mut icon.szTip, "QuietPanel Bridge v6.5.0 正在執行");
     Shell_NotifyIconW(NIM_ADD, &icon);
 }
 
@@ -177,7 +177,7 @@ unsafe fn show_menu(hwnd: HWND) {
         return;
     }
 
-    let running_label = wide("QuietPanel Bridge v7.0.0 正在執行");
+    let running_label = wide("QuietPanel Bridge v6.5.0 正在執行");
     AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, running_label.as_ptr());
     AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
 

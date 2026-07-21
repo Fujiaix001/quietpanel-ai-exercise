@@ -1,23 +1,24 @@
 #![windows_subsystem = "windows"]
 
 mod actions;
+mod adb;
 mod apod;
 mod display;
 mod metrics;
 mod protocol;
 mod settings;
 mod tray;
-mod usb;
 
 use std::io::{self, BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use adb::Adb;
 use metrics::Metrics;
-use protocol::TRANSPORT_TOKEN;
 use serde_json::Value;
 
+const PORT: u16 = 27183;
 const RETRY_DELAY: Duration = Duration::from_secs(2);
 const READ_POLL: Duration = Duration::from_millis(250);
 const STATE_INTERVAL: Duration = Duration::from_secs(1);
@@ -26,6 +27,9 @@ const PING_INTERVAL: Duration = Duration::from_secs(5);
 fn main() {
     println!("QuietPanel Bridge v{}", protocol::VERSION);
     println!("Press Ctrl+C or close this window to stop.");
+
+    let adb = Adb::locate();
+    println!("ADB: {}", adb.display_path());
 
     let mut reporter = StatusReporter::default();
     let mut display_monitor = display::DisplayMonitor::start();
@@ -38,9 +42,25 @@ fn main() {
             pages = changed;
             settings::save_pages(&pages);
         }
-        reporter.report("Waiting for Android USB tethering");
-        let (stream, address) = match usb::connect(RETRY_DELAY) {
-            Ok(connection) => connection,
+        let serial = match adb.single_device() {
+            Ok(serial) => serial,
+            Err(error) => {
+                reporter.report(&error);
+                thread::sleep(RETRY_DELAY);
+                continue;
+            }
+        };
+
+        if let Err(error) = adb.ensure_forward(&serial) {
+            reporter.report(&error);
+            thread::sleep(RETRY_DELAY);
+            continue;
+        }
+
+        reporter.report(&format!("Waiting for Android app ({serial})"));
+        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), PORT);
+        let stream = match TcpStream::connect_timeout(&address, RETRY_DELAY) {
+            Ok(stream) => stream,
             Err(_) => {
                 thread::sleep(RETRY_DELAY);
                 continue;
@@ -50,12 +70,12 @@ fn main() {
         let _ = run_session(
             stream,
             &mut reporter,
-            address,
+            &serial,
             &mut display_monitor,
             &tray,
             &mut pages,
         );
-        reporter.report("Waiting for Android USB tethering");
+        reporter.report(&format!("Waiting for Android app ({serial})"));
         thread::sleep(RETRY_DELAY);
     }
 }
@@ -63,7 +83,7 @@ fn main() {
 fn run_session(
     mut writer: TcpStream,
     reporter: &mut StatusReporter,
-    address: SocketAddr,
+    serial: &str,
     display_monitor: &mut display::DisplayMonitor,
     tray: &tray::TrayController,
     pages: &mut [bool; settings::PAGE_COUNT],
@@ -81,7 +101,7 @@ fn run_session(
         &protocol::display_state(display_monitor.current()),
     )?;
     write_json(&mut writer, &protocol::page_config(pages))?;
-    thread::spawn(move || apod::deliver(address));
+    thread::spawn(apod::deliver);
 
     let mut metrics = Metrics::new();
     let mut last_state = Instant::now() - STATE_INTERVAL;
@@ -119,11 +139,9 @@ fn run_session(
                 let message = line.trim();
                 if !handshake_complete {
                     if let Ok(value) = serde_json::from_str::<Value>(message) {
-                        if value.get("type").and_then(Value::as_str) == Some("hello_ack")
-                            && value.get("token").and_then(Value::as_str) == Some(TRANSPORT_TOKEN)
-                        {
+                        if value.get("type").and_then(Value::as_str) == Some("hello_ack") {
                             handshake_complete = true;
-                            reporter.report(&format!("Connected to Android (USB {address})"));
+                            reporter.report(&format!("Connected to Android ({serial})"));
                         }
                     }
                 }

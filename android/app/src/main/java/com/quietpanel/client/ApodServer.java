@@ -4,11 +4,11 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.Charset;
-import java.util.Arrays;
 
 public final class ApodServer {
     private static final int PORT = 27184;
@@ -65,7 +65,7 @@ public final class ApodServer {
         try {
             ServerSocket server = new ServerSocket();
             server.setReuseAddress(true);
-            server.bind(new InetSocketAddress(PORT), 1);
+            server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), PORT), 1);
             synchronized (this) {
                 if (!running) {
                     closeQuietly(server);
@@ -108,11 +108,6 @@ public final class ApodServer {
             input.readFully(magic);
             if (magic[0] != 'Q' || magic[1] != 'P' || magic[2] != 'A' || magic[3] != 'P') {
                 throw new IllegalArgumentException("資料格式不正確");
-            }
-            byte[] token = new byte[TransportAuth.TOKEN_BYTES.length];
-            input.readFully(token);
-            if (!Arrays.equals(token, TransportAuth.TOKEN_BYTES)) {
-                throw new IllegalArgumentException("未授權的 NASA 資料");
             }
 
             int metadataLength = input.readInt();
