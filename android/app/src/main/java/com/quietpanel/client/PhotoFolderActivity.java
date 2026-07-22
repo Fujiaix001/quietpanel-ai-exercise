@@ -31,6 +31,7 @@ public final class PhotoFolderActivity extends Activity {
     public static final String PREFERENCES = "quietpanel";
     public static final String PHOTO_FOLDERS = "photo_folders";
     public static final String CLOCK_BACKGROUND = "clock_background";
+    public static final String CLOCK_FONT_STYLE = "clock_font_style";
     public static final String PHOTO_INTERVAL_SECONDS = "photo_interval_seconds";
     public static final String CLOCK_X_RATIO = "clock_x_ratio";
     public static final String CLOCK_Y_RATIO = "clock_y_ratio";
@@ -51,6 +52,8 @@ public final class PhotoFolderActivity extends Activity {
     private CheckBox backgroundCheck;
     private TextView intervalText;
     private SeekBar intervalSeek;
+    private int selectedClockFontStyle;
+    private final List<Button> clockFontButtons = new ArrayList<Button>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -143,6 +146,37 @@ public final class PhotoFolderActivity extends Activity {
         backgroundCheck.setPadding(dp(10), dp(4), dp(10), dp(4));
         root.addView(backgroundCheck, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+
+        TextView fontTitle = text("時鐘字體", 16, PRIMARY);
+        fontTitle.setPadding(dp(10), dp(4), dp(10), 0);
+        root.addView(fontTitle, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(30)));
+
+        selectedClockFontStyle = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+                .getInt(CLOCK_FONT_STYLE, 0);
+        LinearLayout fontRow = new LinearLayout(this);
+        fontRow.setGravity(Gravity.CENTER_VERTICAL);
+        final String[] fontLabels = { "預設", "等寬", "襯線", "細體" };
+        for (int i = 0; i < fontLabels.length; i++) {
+            final int style = i;
+            Button fontButton = button(fontLabels[i],
+                    style == selectedClockFontStyle ? Color.rgb(37, 124, 137) : PANEL);
+            fontButton.setTextSize(14);
+            fontButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    setClockFontStyle(style);
+                }
+            });
+            clockFontButtons.add(fontButton);
+            LinearLayout.LayoutParams fontParams = new LinearLayout.LayoutParams(0, dp(40), 1);
+            if (i < fontLabels.length - 1) {
+                fontParams.setMargins(0, 0, dp(6), 0);
+            }
+            fontRow.addView(fontButton, fontParams);
+        }
+        root.addView(fontRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
         LinearLayout intervalRow = new LinearLayout(this);
         intervalRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -307,6 +341,7 @@ public final class PhotoFolderActivity extends Activity {
                 .edit()
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders))
                 .putBoolean(CLOCK_BACKGROUND, backgroundCheck.isChecked())
+                .putInt(CLOCK_FONT_STYLE, selectedClockFontStyle)
                 .putInt(PHOTO_INTERVAL_SECONDS, 10 + intervalSeek.getProgress() * 5)
                 .apply();
         setResult(RESULT_OK);
@@ -316,6 +351,14 @@ public final class PhotoFolderActivity extends Activity {
     private void updateIntervalText() {
         if (intervalText != null && intervalSeek != null) {
             intervalText.setText("單張停留：" + (10 + intervalSeek.getProgress() * 5) + " 秒");
+        }
+    }
+
+    private void setClockFontStyle(int style) {
+        selectedClockFontStyle = style;
+        for (int i = 0; i < clockFontButtons.size(); i++) {
+            clockFontButtons.get(i).setBackground(rounded(
+                    i == selectedClockFontStyle ? Color.rgb(37, 124, 137) : PANEL));
         }
     }
 

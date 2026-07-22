@@ -338,7 +338,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.6.2", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.7.0", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -894,7 +894,35 @@ public final class MainActivity extends Activity
                 PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
                 .getBoolean(PhotoFolderActivity.CLOCK_BACKGROUND, true);
         clockPanel.setBackground(showBackground ? rounded(Color.argb(105, 0, 0, 0)) : null);
+        applyClockFontStyle(getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
+                .getInt(PhotoFolderActivity.CLOCK_FONT_STYLE, 0));
         applyClockPosition();
+    }
+
+    private void applyClockFontStyle(int style) {
+        Typeface typeface;
+        switch (style) {
+            case 1:
+                typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD);
+                break;
+            case 2:
+                typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD);
+                break;
+            case 3:
+                typeface = Typeface.create("sans-serif-light", Typeface.NORMAL);
+                break;
+            case 0:
+            default:
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
+                break;
+        }
+        if (photoTime != null) {
+            photoTime.setTypeface(typeface);
+        }
+        if (photoDate != null) {
+            photoDate.setTypeface(typeface);
+        }
     }
 
     private long getPhotoIntervalMs() {
