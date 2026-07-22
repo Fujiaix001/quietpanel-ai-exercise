@@ -46,7 +46,7 @@ public final class PhotoFolderActivity extends Activity {
     private static final int PRIMARY = Color.rgb(242, 238, 230);
     private static final int SECONDARY = Color.rgb(143, 152, 163);
     private static final int ACCENT = Color.rgb(72, 184, 199);
-    private static final int[] CLOCK_FONT_STYLE_IDS = { 0, 4, 1, 9 };
+    private static final int[] CLOCK_FONT_STYLE_IDS = { 0, 4, 9, 7 };
 
     private final Set<String> selectedFolders = new LinkedHashSet<String>();
     private File storageRoot;
@@ -165,7 +165,7 @@ public final class PhotoFolderActivity extends Activity {
         }
         LinearLayout fontRow = new LinearLayout(this);
         fontRow.setGravity(Gravity.CENTER_VERTICAL);
-        final String[] fontLabels = { "預設", "濃黑", "等寬", "時鐘" };
+        final String[] fontLabels = { "預設", "濃黑", "時鐘", "手寫" };
         for (int i = 0; i < fontLabels.length; i++) {
             final int style = CLOCK_FONT_STYLE_IDS[i];
             Button fontButton = button(fontLabels[i],

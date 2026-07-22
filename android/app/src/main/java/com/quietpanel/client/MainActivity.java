@@ -104,8 +104,10 @@ public final class MainActivity extends Activity
     private final Matrix photoMatrix = new Matrix();
     private final SimpleDateFormat photoTimeFormat =
             new SimpleDateFormat("HH:mm", Locale.TAIWAN);
-    private final SimpleDateFormat photoDateFormat =
+    private final SimpleDateFormat photoDateChineseFormat =
             new SimpleDateFormat("M月d日 EEEE", Locale.TAIWAN);
+    private final SimpleDateFormat photoDateEnglishFormat =
+            new SimpleDateFormat("EEE, MMM d", Locale.US);
     private final Date photoClockDate = new Date();
     private float clockDownX;
     private float clockDownY;
@@ -119,6 +121,7 @@ public final class MainActivity extends Activity
     private int photoGeneration;
     private boolean photoLoading;
     private boolean photoPanReverse = true;
+    private boolean photoDateEnglish;
     private boolean activityResumed;
     private boolean pcDisplayOn = true;
     private PowerManager.WakeLock displayWakeLock;
@@ -345,7 +348,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.2", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.3", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -943,7 +946,11 @@ public final class MainActivity extends Activity
         boolean showBackground = preferences.getBoolean(
                 PhotoFolderActivity.CLOCK_BACKGROUND, true);
         clockPanel.setBackground(showBackground ? rounded(Color.argb(105, 0, 0, 0)) : null);
-        applyClockFontStyle(preferences.getInt(PhotoFolderActivity.CLOCK_FONT_STYLE, 0));
+        int fontStyle = preferences.getInt(PhotoFolderActivity.CLOCK_FONT_STYLE, 0);
+        if (!isPhotoClockFontStyle(fontStyle)) {
+            fontStyle = 0;
+        }
+        applyClockFontStyle(fontStyle);
         applyClockTextScale(preferences.getFloat(PhotoFolderActivity.CLOCK_TEXT_SCALE, 1.0f));
         applyClockPosition();
     }
@@ -951,12 +958,6 @@ public final class MainActivity extends Activity
     private void applyClockFontStyle(int style) {
         Typeface typeface;
         switch (style) {
-            case 1:
-                typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD);
-                break;
-            case 2:
-                typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD);
-                break;
             case 4:
                 typeface = Typeface.create("sans-serif-black", Typeface.BOLD);
                 break;
@@ -975,6 +976,12 @@ public final class MainActivity extends Activity
         if (photoDate != null) {
             photoDate.setTypeface(typeface);
         }
+        photoDateEnglish = style == 7 || style == 9;
+        updatePhotoClock();
+    }
+
+    private boolean isPhotoClockFontStyle(int style) {
+        return style == 0 || style == 4 || style == 7 || style == 9;
     }
 
     private Typeface systemTypeface(String path, Typeface fallback) {
@@ -1244,7 +1251,8 @@ public final class MainActivity extends Activity
             photoTime.setText(photoTimeFormat.format(photoClockDate));
         }
         if (photoDate != null) {
-            photoDate.setText(photoDateFormat.format(photoClockDate));
+            photoDate.setText((photoDateEnglish ? photoDateEnglishFormat
+                    : photoDateChineseFormat).format(photoClockDate));
         }
     }
 
