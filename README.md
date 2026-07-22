@@ -4,7 +4,7 @@
 
 ## 給一般使用者的下載包
 
-想直接使用而不自行安裝 ADB，可下載 [`QuietPanel-v6.6.2-Windows10.zip`](dist/QuietPanel-v6.6.2-Windows10.zip)。解壓縮後先執行 `Install-Android.cmd`，再執行 `Start-QuietPanel.cmd`。手機必須開啟 USB 偵錯，第一次連接時在手機允許這台 Windows 電腦。壓縮包內含 Windows Bridge、APK 與 ADB Platform-Tools；第三方 ADB 的來源與授權說明請見包內中英文 README。
+一般使用者可下載不含第三方 ADB 二進位檔的 [`QuietPanel-v6.6.2-Windows10-NoADB.zip`](dist/QuietPanel-v6.6.2-Windows10-NoADB.zip)。請先從 [Google 官方 Platform-Tools 頁面](https://developer.android.com/tools/releases/platform-tools)下載 Windows ADB，放入解壓縮後的 QuietPanel 資料夾，再執行 `Install-Android.cmd` 與 `Start-QuietPanel.cmd`。手機必須開啟 USB 偵錯，第一次連接時在手機允許這台 Windows 電腦；詳細中英文說明在包內。
 
 ## 系統匣與頁面選擇
 
