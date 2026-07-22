@@ -4,7 +4,10 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ClipDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.Gravity;
@@ -32,6 +35,7 @@ public final class PhotoFolderActivity extends Activity {
     public static final String PHOTO_FOLDERS = "photo_folders";
     public static final String CLOCK_BACKGROUND = "clock_background";
     public static final String CLOCK_FONT_STYLE = "clock_font_style";
+    public static final String CLOCK_TEXT_SCALE = "clock_text_scale";
     public static final String PHOTO_INTERVAL_SECONDS = "photo_interval_seconds";
     public static final String CLOCK_X_RATIO = "clock_x_ratio";
     public static final String CLOCK_Y_RATIO = "clock_y_ratio";
@@ -154,9 +158,17 @@ public final class PhotoFolderActivity extends Activity {
 
         selectedClockFontStyle = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
                 .getInt(CLOCK_FONT_STYLE, 0);
-        LinearLayout fontRow = new LinearLayout(this);
-        fontRow.setGravity(Gravity.CENTER_VERTICAL);
-        final String[] fontLabels = { "預設", "等寬", "襯線", "細體" };
+        LinearLayout[] fontRows = {
+                new LinearLayout(this), new LinearLayout(this), new LinearLayout(this)
+        };
+        fontRows[0].setGravity(Gravity.CENTER_VERTICAL);
+        fontRows[1].setGravity(Gravity.CENTER_VERTICAL);
+        fontRows[2].setGravity(Gravity.CENTER_VERTICAL);
+        final String[] fontLabels = {
+                "預設", "等寬", "襯線", "細體",
+                "濃黑", "窄體", "中黑", "手寫",
+                "數位鐘", "時鐘", "斜體", "小米"
+        };
         for (int i = 0; i < fontLabels.length; i++) {
             final int style = i;
             Button fontButton = button(fontLabels[i],
@@ -170,19 +182,23 @@ public final class PhotoFolderActivity extends Activity {
             });
             clockFontButtons.add(fontButton);
             LinearLayout.LayoutParams fontParams = new LinearLayout.LayoutParams(0, dp(40), 1);
-            if (i < fontLabels.length - 1) {
+            if (i % 4 < 3) {
                 fontParams.setMargins(0, 0, dp(6), 0);
             }
-            fontRow.addView(fontButton, fontParams);
+            fontRows[i / 4].addView(fontButton, fontParams);
         }
-        root.addView(fontRow, new LinearLayout.LayoutParams(
+        root.addView(fontRows[0], new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        root.addView(fontRows[1], new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        root.addView(fontRows[2], new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
         LinearLayout intervalRow = new LinearLayout(this);
         intervalRow.setGravity(Gravity.CENTER_VERTICAL);
         intervalText = text("", 16, PRIMARY);
         intervalText.setPadding(dp(10), 0, dp(8), 0);
-        intervalSeek = new SeekBar(this);
+        intervalSeek = flatSeekBar();
         intervalSeek.setMax((300 - 10) / 5);
         int savedSeconds = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
                 .getInt(PHOTO_INTERVAL_SECONDS, 45);
@@ -409,6 +425,31 @@ public final class PhotoFolderActivity extends Activity {
         button.setAllCaps(false);
         button.setBackground(rounded(color));
         return button;
+    }
+
+    private SeekBar flatSeekBar() {
+        SeekBar seekBar = new SeekBar(this);
+        GradientDrawable track = rounded(Color.rgb(52, 65, 77));
+        GradientDrawable activeTrack = rounded(ACCENT);
+        LayerDrawable progressDrawable = new LayerDrawable(new Drawable[] {
+                track,
+                new ClipDrawable(activeTrack, Gravity.LEFT, ClipDrawable.HORIZONTAL)
+        });
+        progressDrawable.setId(0, android.R.id.background);
+        progressDrawable.setId(1, android.R.id.progress);
+        seekBar.setProgressDrawable(progressDrawable);
+
+        GradientDrawable thumb = new GradientDrawable();
+        thumb.setShape(GradientDrawable.OVAL);
+        thumb.setColor(ACCENT);
+        thumb.setStroke(dp(2), Color.rgb(11, 15, 20));
+        thumb.setSize(dp(18), dp(18));
+        seekBar.setThumb(thumb);
+        seekBar.setThumbOffset(dp(9));
+        seekBar.setPadding(dp(9), 0, dp(9), 0);
+        seekBar.setMinimumHeight(dp(40));
+        seekBar.setMaxHeight(dp(7));
+        return seekBar;
     }
 
     private GradientDrawable rounded(int color) {

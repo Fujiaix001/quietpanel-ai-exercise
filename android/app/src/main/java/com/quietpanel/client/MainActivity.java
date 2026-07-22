@@ -17,13 +17,13 @@ import android.os.PowerManager;
 import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -59,6 +59,10 @@ public final class MainActivity extends Activity
     private static final int MAX_PHOTO_INTERVAL_SECONDS = 300;
     private static final long PHOTO_PAN_FRAME_MS = 67;
     private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.20f;
+    private static final float PHOTO_TIME_TEXT_SIZE_SP = 64.0f;
+    private static final float PHOTO_DATE_TEXT_SIZE_SP = 24.0f;
+    private static final float MIN_CLOCK_TEXT_SCALE = 0.75f;
+    private static final float MAX_CLOCK_TEXT_SCALE = 2.5f;
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
     private static final int MAX_PHOTO_FILES = 10000;
 
@@ -107,6 +111,9 @@ public final class MainActivity extends Activity
     private float clockDownY;
     private int clockDownLeft;
     private int clockDownTop;
+    private ScaleGestureDetector clockScaleDetector;
+    private boolean clockGestureWasScaling;
+    private float clockTextScale = 1.0f;
     private int photoIndex;
     private int photoFailures;
     private int photoGeneration;
@@ -338,7 +345,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.7.0", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.0", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -452,25 +459,64 @@ public final class MainActivity extends Activity
         clockPanel.setGravity(Gravity.RIGHT);
         clockPanel.setPadding(dp(18), dp(10), dp(18), dp(12));
         clockPanel.setBackground(rounded(Color.argb(105, 0, 0, 0)));
+        clockScaleDetector = new ScaleGestureDetector(this,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScaleBegin(ScaleGestureDetector detector) {
+                        clockGestureWasScaling = true;
+                        if (clockPanel != null && clockPanel.getParent() != null) {
+                            clockPanel.getParent().requestDisallowInterceptTouchEvent(true);
+                        }
+                        return true;
+                    }
+
+                    @Override
+                    public boolean onScale(ScaleGestureDetector detector) {
+                        applyClockTextScale(clockTextScale * detector.getScaleFactor());
+                        return true;
+                    }
+
+                    @Override
+                    public void onScaleEnd(ScaleGestureDetector detector) {
+                        saveClockTextScale();
+                        if (photoPage != null) {
+                            photoPage.post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    moveClockPanel(clockPanel.getLeft(), clockPanel.getTop());
+                                }
+                            });
+                        }
+                    }
+                });
         clockPanel.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
+                clockScaleDetector.onTouchEvent(event);
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
                         view.getParent().requestDisallowInterceptTouchEvent(true);
+                        clockGestureWasScaling = false;
                         clockDownX = event.getRawX();
                         clockDownY = event.getRawY();
                         clockDownLeft = clockPanel.getLeft();
                         clockDownTop = clockPanel.getTop();
                         return true;
+                    case MotionEvent.ACTION_POINTER_DOWN:
+                        return true;
                     case MotionEvent.ACTION_MOVE:
+                        if (clockGestureWasScaling || event.getPointerCount() > 1) {
+                            return true;
+                        }
                         moveClockPanel(
                                 clockDownLeft + Math.round(event.getRawX() - clockDownX),
                                 clockDownTop + Math.round(event.getRawY() - clockDownY));
                         return true;
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
-                        saveClockPosition();
+                        if (!clockGestureWasScaling) {
+                            saveClockPosition();
+                        }
                         view.getParent().requestDisallowInterceptTouchEvent(false);
                         return true;
                     default:
@@ -479,7 +525,7 @@ public final class MainActivity extends Activity
             }
         });
 
-        photoTime = makeText("", 64, Color.WHITE, Gravity.RIGHT);
+        photoTime = makeText("", PHOTO_TIME_TEXT_SIZE_SP, Color.WHITE, Gravity.RIGHT);
         photoTime.setTypeface(Typeface.DEFAULT_BOLD);
         photoTime.setIncludeFontPadding(false);
         photoTime.setShadowLayer(dp(3), dp(1), dp(1), Color.BLACK);
@@ -487,7 +533,7 @@ public final class MainActivity extends Activity
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        photoDate = makeText("", 24, Color.WHITE, Gravity.RIGHT);
+        photoDate = makeText("", PHOTO_DATE_TEXT_SIZE_SP, Color.WHITE, Gravity.RIGHT);
         photoDate.setIncludeFontPadding(false);
         photoDate.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
         clockPanel.addView(photoDate, new LinearLayout.LayoutParams(
@@ -890,13 +936,13 @@ public final class MainActivity extends Activity
         if (clockPanel == null) {
             return;
         }
-        boolean showBackground = getSharedPreferences(
-                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
-                .getBoolean(PhotoFolderActivity.CLOCK_BACKGROUND, true);
+        android.content.SharedPreferences preferences = getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
+        boolean showBackground = preferences.getBoolean(
+                PhotoFolderActivity.CLOCK_BACKGROUND, true);
         clockPanel.setBackground(showBackground ? rounded(Color.argb(105, 0, 0, 0)) : null);
-        applyClockFontStyle(getSharedPreferences(
-                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
-                .getInt(PhotoFolderActivity.CLOCK_FONT_STYLE, 0));
+        applyClockFontStyle(preferences.getInt(PhotoFolderActivity.CLOCK_FONT_STYLE, 0));
+        applyClockTextScale(preferences.getFloat(PhotoFolderActivity.CLOCK_TEXT_SCALE, 1.0f));
         applyClockPosition();
     }
 
@@ -912,6 +958,34 @@ public final class MainActivity extends Activity
             case 3:
                 typeface = Typeface.create("sans-serif-light", Typeface.NORMAL);
                 break;
+            case 4:
+                typeface = Typeface.create("sans-serif-black", Typeface.BOLD);
+                break;
+            case 5:
+                typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD);
+                break;
+            case 6:
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL);
+                break;
+            case 7:
+                typeface = systemTypeface("/system/fonts/TobysHand.ttf",
+                        Typeface.create("cursive", Typeface.NORMAL));
+                break;
+            case 8:
+                typeface = systemTypeface("/system/fonts/AndroidClock.ttf",
+                        Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL));
+                break;
+            case 9:
+                typeface = systemTypeface("/system/fonts/Clockopia.ttf",
+                        Typeface.create(Typeface.DEFAULT, Typeface.NORMAL));
+                break;
+            case 10:
+                typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC);
+                break;
+            case 11:
+                typeface = systemTypeface("/system/fonts/Miui-Regular.ttf",
+                        Typeface.create(Typeface.DEFAULT, Typeface.NORMAL));
+                break;
             case 0:
             default:
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
@@ -923,6 +997,32 @@ public final class MainActivity extends Activity
         if (photoDate != null) {
             photoDate.setTypeface(typeface);
         }
+    }
+
+    private Typeface systemTypeface(String path, Typeface fallback) {
+        try {
+            return Typeface.createFromFile(path);
+        } catch (RuntimeException ignored) {
+            return fallback;
+        }
+    }
+
+    private void applyClockTextScale(float requestedScale) {
+        clockTextScale = Math.max(MIN_CLOCK_TEXT_SCALE,
+                Math.min(MAX_CLOCK_TEXT_SCALE, requestedScale));
+        if (photoTime != null) {
+            photoTime.setTextSize(PHOTO_TIME_TEXT_SIZE_SP * clockTextScale);
+        }
+        if (photoDate != null) {
+            photoDate.setTextSize(PHOTO_DATE_TEXT_SIZE_SP * clockTextScale);
+        }
+    }
+
+    private void saveClockTextScale() {
+        getSharedPreferences(PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
+                .edit()
+                .putFloat(PhotoFolderActivity.CLOCK_TEXT_SCALE, clockTextScale)
+                .apply();
     }
 
     private long getPhotoIntervalMs() {
@@ -1611,26 +1711,34 @@ public final class MainActivity extends Activity
         final LinearLayout container;
         final TextView name;
         final TextView usage;
-        final ProgressBar progress;
+        final TextView remaining;
+        final FrameLayout progressTrack;
+        final View progressFill;
 
         DiskRow() {
             container = new LinearLayout(MainActivity.this);
             container.setOrientation(LinearLayout.VERTICAL);
-            container.setPadding(dp(16), dp(5), dp(16), dp(5));
-            container.setBackground(rounded(PANEL));
+            container.setPadding(dp(18), dp(10), dp(18), dp(10));
+            container.setBackground(rounded(Color.rgb(18, 25, 32)));
 
             LinearLayout line = new LinearLayout(MainActivity.this);
             name = makeText("--", 20, PRIMARY, Gravity.START);
-            usage = makeText("等待資料", 15, SECONDARY, Gravity.END);
-            line.addView(name, new LinearLayout.LayoutParams(0, dp(32), 1));
-            line.addView(usage, new LinearLayout.LayoutParams(0, dp(32), 2));
+            remaining = makeText("等待資料", 16, SECONDARY, Gravity.END);
+            line.addView(name, new LinearLayout.LayoutParams(0, dp(30), 1));
+            line.addView(remaining, new LinearLayout.LayoutParams(0, dp(30), 1));
             container.addView(line);
 
-            progress = new ProgressBar(
-                    MainActivity.this, null, android.R.attr.progressBarStyleHorizontal);
-            progress.setMax(1000);
-            container.addView(progress, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(12)));
+            usage = makeText("等待資料", 15, SECONDARY, Gravity.START);
+            container.addView(usage, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(24)));
+
+            progressTrack = new FrameLayout(MainActivity.this);
+            progressTrack.setBackground(rounded(Color.rgb(48, 61, 73)));
+            progressFill = new View(MainActivity.this);
+            progressFill.setBackground(rounded(ACCENT));
+            progressTrack.addView(progressFill, new FrameLayout.LayoutParams(0, dp(7)));
+            container.addView(progressTrack, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(7)));
 
             LinearLayout.LayoutParams outer = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1644,7 +1752,8 @@ public final class MainActivity extends Activity
                 name.setText("--");
                 usage.setText("沒有更多磁碟");
                 usage.setTextColor(SECONDARY);
-                progress.setProgress(0);
+                remaining.setText("");
+                setProgress(0.0, ACCENT);
                 return false;
             }
 
@@ -1653,11 +1762,28 @@ public final class MainActivity extends Activity
             double percent = total <= 0 ? 0 : used / total * 100.0;
             boolean lowSpace = percent >= 90.0;
             name.setText(disk.optString("name", "?"));
-            usage.setText(format(used) + " / " + format(total) + " GB  ·  "
+            double free = Math.max(0.0, total - used);
+            usage.setText("已用 " + format(used) + " / " + format(total) + " GB  ·  "
                     + format(percent) + "%" + (lowSpace ? "  ·  空間不足" : ""));
             usage.setTextColor(lowSpace ? WARNING : SECONDARY);
-            progress.setProgress((int) Math.round(percent * 10));
+            remaining.setText("剩餘 " + format(free) + " GB");
+            remaining.setTextColor(lowSpace ? WARNING : PRIMARY);
+            setProgress(percent, lowSpace ? WARNING : ACCENT);
             return lowSpace;
+        }
+
+        private void setProgress(final double percent, int color) {
+            progressFill.setBackground(rounded(color));
+            progressTrack.post(new Runnable() {
+                @Override
+                public void run() {
+                    FrameLayout.LayoutParams params =
+                            (FrameLayout.LayoutParams) progressFill.getLayoutParams();
+                    params.width = Math.max(0, Math.min(progressTrack.getWidth(),
+                            (int) Math.round(progressTrack.getWidth() * percent / 100.0)));
+                    progressFill.setLayoutParams(params);
+                }
+            });
         }
     }
 
