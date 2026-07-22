@@ -39,6 +39,7 @@ public final class PhotoFolderActivity extends Activity {
     public static final String PHOTO_INTERVAL_SECONDS = "photo_interval_seconds";
     public static final String CLOCK_X_RATIO = "clock_x_ratio";
     public static final String CLOCK_Y_RATIO = "clock_y_ratio";
+    public static final String CLOCK_POSITION_CUSTOMIZED = "clock_position_customized";
 
     private static final int BACKGROUND = Color.rgb(11, 15, 20);
     private static final int PANEL = Color.rgb(24, 31, 40);
@@ -431,6 +432,8 @@ public final class PhotoFolderActivity extends Activity {
         SeekBar seekBar = new SeekBar(this);
         GradientDrawable track = rounded(Color.rgb(52, 65, 77));
         GradientDrawable activeTrack = rounded(ACCENT);
+        track.setSize(dp(1), dp(6));
+        activeTrack.setSize(dp(1), dp(6));
         LayerDrawable progressDrawable = new LayerDrawable(new Drawable[] {
                 track,
                 new ClipDrawable(activeTrack, Gravity.LEFT, ClipDrawable.HORIZONTAL)
@@ -448,7 +451,6 @@ public final class PhotoFolderActivity extends Activity {
         seekBar.setThumbOffset(dp(9));
         seekBar.setPadding(dp(9), 0, dp(9), 0);
         seekBar.setMinimumHeight(dp(40));
-        seekBar.setMaxHeight(dp(7));
         return seekBar;
     }
 

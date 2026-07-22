@@ -1,4 +1,4 @@
-# QuietPanel v6.8.0
+# QuietPanel v6.8.1
 
 > 專案目前維持穩定的 ADB 版本。完整背景、架構、版本決策、已知問題與未來重啟方式請見 [`docs/PROJECT_CLOSEOUT_2026-07-22.md`](docs/PROJECT_CLOSEOUT_2026-07-22.md)。
 

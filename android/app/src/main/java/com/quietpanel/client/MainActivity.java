@@ -345,7 +345,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.0", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.1", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -902,13 +902,14 @@ public final class MainActivity extends Activity
                 PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
         int maxLeft = Math.max(0, photoPage.getWidth() - clockPanel.getWidth());
         int maxTop = Math.max(0, photoPage.getHeight() - clockPanel.getHeight());
-        if (!preferences.contains(PhotoFolderActivity.CLOCK_X_RATIO)
-                || !preferences.contains(PhotoFolderActivity.CLOCK_Y_RATIO)) {
+        float xRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_X_RATIO, 1.0f);
+        float yRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_Y_RATIO, 1.0f);
+        boolean positionCustomized = preferences.getBoolean(
+                PhotoFolderActivity.CLOCK_POSITION_CUSTOMIZED, false);
+        if (!positionCustomized) {
             moveClockPanel(maxLeft - dp(12), maxTop - dp(12));
             return;
         }
-        float xRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_X_RATIO, 1.0f);
-        float yRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_Y_RATIO, 1.0f);
         moveClockPanel(Math.round(maxLeft * clampRatio(xRatio)),
                 Math.round(maxTop * clampRatio(yRatio)));
     }
@@ -925,6 +926,7 @@ public final class MainActivity extends Activity
                         clampRatio((float) clockPanel.getLeft() / maxLeft))
                 .putFloat(PhotoFolderActivity.CLOCK_Y_RATIO,
                         clampRatio((float) clockPanel.getTop() / maxTop))
+                .putBoolean(PhotoFolderActivity.CLOCK_POSITION_CUSTOMIZED, true)
                 .apply();
     }
 
@@ -1718,32 +1720,36 @@ public final class MainActivity extends Activity
         DiskRow() {
             container = new LinearLayout(MainActivity.this);
             container.setOrientation(LinearLayout.VERTICAL);
-            container.setPadding(dp(18), dp(10), dp(18), dp(10));
+            container.setPadding(dp(18), dp(5), dp(18), dp(5));
             container.setBackground(rounded(Color.rgb(18, 25, 32)));
 
             LinearLayout line = new LinearLayout(MainActivity.this);
-            name = makeText("--", 20, PRIMARY, Gravity.START);
-            remaining = makeText("等待資料", 16, SECONDARY, Gravity.END);
-            line.addView(name, new LinearLayout.LayoutParams(0, dp(30), 1));
-            line.addView(remaining, new LinearLayout.LayoutParams(0, dp(30), 1));
-            container.addView(line);
-
-            usage = makeText("等待資料", 15, SECONDARY, Gravity.START);
-            container.addView(usage, new LinearLayout.LayoutParams(
+            name = makeText("--", 18, PRIMARY, Gravity.START);
+            remaining = makeText("等待資料", 14, SECONDARY, Gravity.END);
+            name.setIncludeFontPadding(false);
+            remaining.setIncludeFontPadding(false);
+            line.addView(name, new LinearLayout.LayoutParams(0, dp(24), 1));
+            line.addView(remaining, new LinearLayout.LayoutParams(0, dp(24), 1));
+            container.addView(line, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(24)));
+
+            usage = makeText("等待資料", 13, SECONDARY, Gravity.START);
+            usage.setIncludeFontPadding(false);
+            container.addView(usage, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(18)));
 
             progressTrack = new FrameLayout(MainActivity.this);
             progressTrack.setBackground(rounded(Color.rgb(48, 61, 73)));
             progressFill = new View(MainActivity.this);
             progressFill.setBackground(rounded(ACCENT));
-            progressTrack.addView(progressFill, new FrameLayout.LayoutParams(0, dp(7)));
+            progressTrack.addView(progressFill, new FrameLayout.LayoutParams(0, dp(6)));
             container.addView(progressTrack, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(7)));
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(6)));
 
             LinearLayout.LayoutParams outer = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.MATCH_PARENT);
-            outer.setMargins(dp(5), dp(5), dp(5), dp(5));
+            outer.setMargins(dp(5), dp(2), dp(5), dp(2));
             container.setLayoutParams(outer);
         }
 
