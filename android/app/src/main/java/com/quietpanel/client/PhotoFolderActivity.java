@@ -46,6 +46,7 @@ public final class PhotoFolderActivity extends Activity {
     private static final int PRIMARY = Color.rgb(242, 238, 230);
     private static final int SECONDARY = Color.rgb(143, 152, 163);
     private static final int ACCENT = Color.rgb(72, 184, 199);
+    private static final int[] CLOCK_FONT_STYLE_IDS = { 0, 4, 1, 9 };
 
     private final Set<String> selectedFolders = new LinkedHashSet<String>();
     private File storageRoot;
@@ -159,19 +160,14 @@ public final class PhotoFolderActivity extends Activity {
 
         selectedClockFontStyle = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
                 .getInt(CLOCK_FONT_STYLE, 0);
-        LinearLayout[] fontRows = {
-                new LinearLayout(this), new LinearLayout(this), new LinearLayout(this)
-        };
-        fontRows[0].setGravity(Gravity.CENTER_VERTICAL);
-        fontRows[1].setGravity(Gravity.CENTER_VERTICAL);
-        fontRows[2].setGravity(Gravity.CENTER_VERTICAL);
-        final String[] fontLabels = {
-                "預設", "等寬", "襯線", "細體",
-                "濃黑", "窄體", "中黑", "手寫",
-                "數位鐘", "時鐘", "斜體", "小米"
-        };
+        if (!isAvailableClockFontStyle(selectedClockFontStyle)) {
+            selectedClockFontStyle = 0;
+        }
+        LinearLayout fontRow = new LinearLayout(this);
+        fontRow.setGravity(Gravity.CENTER_VERTICAL);
+        final String[] fontLabels = { "預設", "濃黑", "等寬", "時鐘" };
         for (int i = 0; i < fontLabels.length; i++) {
-            final int style = i;
+            final int style = CLOCK_FONT_STYLE_IDS[i];
             Button fontButton = button(fontLabels[i],
                     style == selectedClockFontStyle ? Color.rgb(37, 124, 137) : PANEL);
             fontButton.setTextSize(14);
@@ -186,13 +182,9 @@ public final class PhotoFolderActivity extends Activity {
             if (i % 4 < 3) {
                 fontParams.setMargins(0, 0, dp(6), 0);
             }
-            fontRows[i / 4].addView(fontButton, fontParams);
+            fontRow.addView(fontButton, fontParams);
         }
-        root.addView(fontRows[0], new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
-        root.addView(fontRows[1], new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
-        root.addView(fontRows[2], new LinearLayout.LayoutParams(
+        root.addView(fontRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
         LinearLayout intervalRow = new LinearLayout(this);
@@ -219,10 +211,10 @@ public final class PhotoFolderActivity extends Activity {
             public void onStopTrackingTouch(SeekBar seekBar) {
             }
         });
-        intervalRow.addView(intervalText, new LinearLayout.LayoutParams(dp(150), dp(52)));
-        intervalRow.addView(intervalSeek, new LinearLayout.LayoutParams(0, dp(52), 1));
+        intervalRow.addView(intervalText, new LinearLayout.LayoutParams(dp(150), dp(32)));
+        intervalRow.addView(intervalSeek, new LinearLayout.LayoutParams(0, dp(32), 1));
         root.addView(intervalRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(32)));
         updateIntervalText();
 
         LinearLayout pathRow = new LinearLayout(this);
@@ -375,8 +367,18 @@ public final class PhotoFolderActivity extends Activity {
         selectedClockFontStyle = style;
         for (int i = 0; i < clockFontButtons.size(); i++) {
             clockFontButtons.get(i).setBackground(rounded(
-                    i == selectedClockFontStyle ? Color.rgb(37, 124, 137) : PANEL));
+                    CLOCK_FONT_STYLE_IDS[i] == selectedClockFontStyle
+                            ? Color.rgb(37, 124, 137) : PANEL));
         }
+    }
+
+    private boolean isAvailableClockFontStyle(int style) {
+        for (int availableStyle : CLOCK_FONT_STYLE_IDS) {
+            if (availableStyle == style) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String relativePath(File directory) {
@@ -432,8 +434,8 @@ public final class PhotoFolderActivity extends Activity {
         SeekBar seekBar = new SeekBar(this);
         GradientDrawable track = rounded(Color.rgb(52, 65, 77));
         GradientDrawable activeTrack = rounded(ACCENT);
-        track.setSize(dp(1), dp(6));
-        activeTrack.setSize(dp(1), dp(6));
+        track.setSize(dp(1), dp(4));
+        activeTrack.setSize(dp(1), dp(4));
         LayerDrawable progressDrawable = new LayerDrawable(new Drawable[] {
                 track,
                 new ClipDrawable(activeTrack, Gravity.LEFT, ClipDrawable.HORIZONTAL)
@@ -444,13 +446,12 @@ public final class PhotoFolderActivity extends Activity {
 
         GradientDrawable thumb = new GradientDrawable();
         thumb.setShape(GradientDrawable.OVAL);
-        thumb.setColor(ACCENT);
-        thumb.setStroke(dp(2), Color.rgb(11, 15, 20));
-        thumb.setSize(dp(18), dp(18));
+        thumb.setColor(Color.TRANSPARENT);
+        thumb.setSize(dp(1), dp(1));
         seekBar.setThumb(thumb);
-        seekBar.setThumbOffset(dp(9));
-        seekBar.setPadding(dp(9), 0, dp(9), 0);
-        seekBar.setMinimumHeight(dp(40));
+        seekBar.setThumbOffset(0);
+        seekBar.setPadding(0, 0, 0, 0);
+        seekBar.setMinimumHeight(dp(1));
         return seekBar;
     }
 

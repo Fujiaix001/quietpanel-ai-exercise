@@ -345,7 +345,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.1", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.2", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -957,35 +957,11 @@ public final class MainActivity extends Activity
             case 2:
                 typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD);
                 break;
-            case 3:
-                typeface = Typeface.create("sans-serif-light", Typeface.NORMAL);
-                break;
             case 4:
                 typeface = Typeface.create("sans-serif-black", Typeface.BOLD);
                 break;
-            case 5:
-                typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD);
-                break;
-            case 6:
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL);
-                break;
-            case 7:
-                typeface = systemTypeface("/system/fonts/TobysHand.ttf",
-                        Typeface.create("cursive", Typeface.NORMAL));
-                break;
-            case 8:
-                typeface = systemTypeface("/system/fonts/AndroidClock.ttf",
-                        Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL));
-                break;
             case 9:
                 typeface = systemTypeface("/system/fonts/Clockopia.ttf",
-                        Typeface.create(Typeface.DEFAULT, Typeface.NORMAL));
-                break;
-            case 10:
-                typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC);
-                break;
-            case 11:
-                typeface = systemTypeface("/system/fonts/Miui-Regular.ttf",
                         Typeface.create(Typeface.DEFAULT, Typeface.NORMAL));
                 break;
             case 0:
