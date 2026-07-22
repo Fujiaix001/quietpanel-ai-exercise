@@ -15,7 +15,7 @@ QuietPanel 是將一台 **Xiaomi 2013023（紅米一代、Android 4.2.2 / API 17
 | 原始碼工作目錄 | `C:\Users\hsuchungming\Desktop\WorkSpace\QuietPanel_v6` |
 | GitHub | <https://github.com/Fujiaix001/quietpanel-ai-exercise> |
 | 正式分支 | `main` |
-| 最新本機版本 | v6.8.3（尚未推送 GitHub） |
+| 最新本機版本 | v6.8.4（尚未推送 GitHub） |
 | 結案提交 | `2968f7c`（回復 v7 USB 網路共用） |
 | 穩定功能基準 | `7b47816`（v6.5.0 ADB 功能內容） |
 | 穩定版標籤 | `v6.5.0`（`d4f65ee`；後續有相簿按鈕樣式與系統頁磁碟 I/O 提交） |

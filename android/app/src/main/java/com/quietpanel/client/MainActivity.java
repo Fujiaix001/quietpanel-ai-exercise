@@ -348,7 +348,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.3", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.4", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -961,6 +961,10 @@ public final class MainActivity extends Activity
             case 4:
                 typeface = Typeface.create("sans-serif-black", Typeface.BOLD);
                 break;
+            case 7:
+                typeface = systemTypeface("/system/fonts/TobysHand.ttf",
+                        Typeface.create("cursive", Typeface.NORMAL));
+                break;
             case 9:
                 typeface = systemTypeface("/system/fonts/Clockopia.ttf",
                         Typeface.create(Typeface.DEFAULT, Typeface.NORMAL));
@@ -974,7 +978,8 @@ public final class MainActivity extends Activity
             photoTime.setTypeface(typeface);
         }
         if (photoDate != null) {
-            photoDate.setTypeface(typeface);
+            photoDate.setTypeface(style == 7 || style == 9
+                    ? Typeface.create(Typeface.DEFAULT, Typeface.NORMAL) : typeface);
         }
         photoDateEnglish = style == 7 || style == 9;
         updatePhotoClock();
