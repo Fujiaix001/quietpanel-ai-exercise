@@ -14,6 +14,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -29,6 +30,10 @@ import java.util.Set;
 public final class PhotoFolderActivity extends Activity {
     public static final String PREFERENCES = "quietpanel";
     public static final String PHOTO_FOLDERS = "photo_folders";
+    public static final String CLOCK_BACKGROUND = "clock_background";
+    public static final String PHOTO_INTERVAL_SECONDS = "photo_interval_seconds";
+    public static final String CLOCK_X_RATIO = "clock_x_ratio";
+    public static final String CLOCK_Y_RATIO = "clock_y_ratio";
 
     private static final int BACKGROUND = Color.rgb(11, 15, 20);
     private static final int PANEL = Color.rgb(24, 31, 40);
@@ -43,6 +48,9 @@ public final class PhotoFolderActivity extends Activity {
     private TextView selectionText;
     private CheckBox currentFolderCheck;
     private LinearLayout folderList;
+    private CheckBox backgroundCheck;
+    private TextView intervalText;
+    private SeekBar intervalSeek;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,7 +105,7 @@ public final class PhotoFolderActivity extends Activity {
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text("選擇相簿資料夾", 23, PRIMARY);
+        TextView title = text("相簿設定", 23, PRIMARY);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         selectionText = text("", 14, ACCENT);
         selectionText.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
@@ -122,6 +130,46 @@ public final class PhotoFolderActivity extends Activity {
         saveParams.setMargins(dp(10), 0, 0, 0);
         titleRow.addView(save, saveParams);
         root.addView(titleRow);
+
+        backgroundCheck = new CheckBox(this);
+        backgroundCheck.setText("顯示時間日期半透明底板");
+        backgroundCheck.setTextColor(PRIMARY);
+        backgroundCheck.setTextSize(17);
+        backgroundCheck.setChecked(getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+                .getBoolean(CLOCK_BACKGROUND, true));
+        backgroundCheck.setPadding(dp(10), dp(4), dp(10), dp(4));
+        root.addView(backgroundCheck, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+
+        LinearLayout intervalRow = new LinearLayout(this);
+        intervalRow.setGravity(Gravity.CENTER_VERTICAL);
+        intervalText = text("", 16, PRIMARY);
+        intervalText.setPadding(dp(10), 0, dp(8), 0);
+        intervalSeek = new SeekBar(this);
+        intervalSeek.setMax((300 - 10) / 5);
+        int savedSeconds = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+                .getInt(PHOTO_INTERVAL_SECONDS, 45);
+        intervalSeek.setProgress(Math.max(0, Math.min(intervalSeek.getMax(),
+                (savedSeconds - 10) / 5)));
+        intervalSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                updateIntervalText();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        intervalRow.addView(intervalText, new LinearLayout.LayoutParams(dp(150), dp(52)));
+        intervalRow.addView(intervalSeek, new LinearLayout.LayoutParams(0, dp(52), 1));
+        root.addView(intervalRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
+        updateIntervalText();
 
         LinearLayout pathRow = new LinearLayout(this);
         pathRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -255,9 +303,17 @@ public final class PhotoFolderActivity extends Activity {
         getSharedPreferences(PREFERENCES, MODE_PRIVATE)
                 .edit()
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders))
+                .putBoolean(CLOCK_BACKGROUND, backgroundCheck.isChecked())
+                .putInt(PHOTO_INTERVAL_SECONDS, 10 + intervalSeek.getProgress() * 5)
                 .apply();
         setResult(RESULT_OK);
         finish();
+    }
+
+    private void updateIntervalText() {
+        if (intervalText != null && intervalSeek != null) {
+            intervalText.setText("單張停留：" + (10 + intervalSeek.getProgress() * 5) + " 秒");
+        }
     }
 
     private String relativePath(File directory) {

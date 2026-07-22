@@ -16,6 +16,7 @@ import android.os.Handler;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -53,8 +54,9 @@ public final class MainActivity extends Activity
     private static final int WARNING = Color.rgb(239, 108, 108);
     private static final int PHOTO_PAGE = 2;
     private static final int PAGE_COUNT = 6;
-    private static final long PHOTO_INTERVAL_MS = 45000;
-    private static final long PHOTO_PAN_DURATION_MS = PHOTO_INTERVAL_MS - 2000;
+    private static final int DEFAULT_PHOTO_INTERVAL_SECONDS = 45;
+    private static final int MIN_PHOTO_INTERVAL_SECONDS = 10;
+    private static final int MAX_PHOTO_INTERVAL_SECONDS = 300;
     private static final long PHOTO_PAN_FRAME_MS = 67;
     private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.20f;
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
@@ -88,7 +90,9 @@ public final class MainActivity extends Activity
     private TextView photoStatus;
     private TextView photoTime;
     private TextView photoDate;
-    private Button photoFolderButton;
+    private Button photoSettingsButton;
+    private LinearLayout clockPanel;
+    private FrameLayout photoPage;
     private Bitmap photoBitmap;
     private Bitmap pendingPhotoBitmap;
     private final List<File> photoFiles = new ArrayList<File>();
@@ -98,6 +102,11 @@ public final class MainActivity extends Activity
             new SimpleDateFormat("HH:mm", Locale.TAIWAN);
     private final SimpleDateFormat photoDateFormat =
             new SimpleDateFormat("M月d日 EEEE", Locale.TAIWAN);
+    private final Date photoClockDate = new Date();
+    private float clockDownX;
+    private float clockDownY;
+    private int clockDownLeft;
+    private int clockDownTop;
     private int photoIndex;
     private int photoFailures;
     private int photoGeneration;
@@ -143,7 +152,7 @@ public final class MainActivity extends Activity
                 return;
             }
             long elapsed = SystemClock.elapsedRealtime() - photoPanStartedAt;
-            float progress = Math.min(1.0f, (float) elapsed / PHOTO_PAN_DURATION_MS);
+            float progress = Math.min(1.0f, (float) elapsed / getPhotoPanDurationMs());
             applyPhotoPan(progress);
             if (progress < 1.0f) {
                 photoHandler.postDelayed(this, PHOTO_PAN_FRAME_MS);
@@ -180,6 +189,7 @@ public final class MainActivity extends Activity
     protected void onResume() {
         super.onResume();
         activityResumed = true;
+        applyPhotoSettings();
         if (pcDisplayOn && currentPage == PHOTO_PAGE) {
             startPhotoSlideshow();
         }
@@ -327,7 +337,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.5.0", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.6.0", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -410,12 +420,13 @@ public final class MainActivity extends Activity
 
     private View buildPhotoPage() {
         final FrameLayout page = new FrameLayout(this);
+        photoPage = page;
         page.setBackgroundColor(Color.BLACK);
         page.setClickable(true);
         page.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                showPhotoFolderButton();
+                showPhotoSettingsButton();
             }
         });
 
@@ -435,20 +446,46 @@ public final class MainActivity extends Activity
                 Gravity.CENTER);
         page.addView(photoStatus, statusParams);
 
-        LinearLayout clockPanel = new LinearLayout(this);
+        clockPanel = new LinearLayout(this);
         clockPanel.setOrientation(LinearLayout.VERTICAL);
         clockPanel.setGravity(Gravity.RIGHT);
         clockPanel.setPadding(dp(18), dp(10), dp(18), dp(12));
         clockPanel.setBackground(rounded(Color.argb(105, 0, 0, 0)));
+        clockPanel.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View view, MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        clockDownX = event.getRawX();
+                        clockDownY = event.getRawY();
+                        clockDownLeft = clockPanel.getLeft();
+                        clockDownTop = clockPanel.getTop();
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        moveClockPanel(
+                                clockDownLeft + Math.round(event.getRawX() - clockDownX),
+                                clockDownTop + Math.round(event.getRawY() - clockDownY));
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        saveClockPosition();
+                        return true;
+                    default:
+                        return true;
+                }
+            }
+        });
 
         photoTime = makeText("", 64, Color.WHITE, Gravity.RIGHT);
         photoTime.setTypeface(Typeface.DEFAULT_BOLD);
+        photoTime.setIncludeFontPadding(false);
         photoTime.setShadowLayer(dp(3), dp(1), dp(1), Color.BLACK);
         clockPanel.addView(photoTime, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         photoDate = makeText("", 24, Color.WHITE, Gravity.RIGHT);
+        photoDate.setIncludeFontPadding(false);
         photoDate.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
         clockPanel.addView(photoDate, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -457,17 +494,23 @@ public final class MainActivity extends Activity
         FrameLayout.LayoutParams clockParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.RIGHT);
-        clockParams.setMargins(dp(28), dp(28), dp(12), dp(12));
+                Gravity.TOP | Gravity.LEFT);
         page.addView(clockPanel, clockParams);
+        page.post(new Runnable() {
+            @Override
+            public void run() {
+                applyClockPosition();
+                applyPhotoSettings();
+            }
+        });
 
-        photoFolderButton = new Button(this);
-        photoFolderButton.setText("相簿資料夾");
-        photoFolderButton.setTextColor(Color.WHITE);
-        photoFolderButton.setTextSize(17);
-        photoFolderButton.setAllCaps(false);
-        photoFolderButton.setAlpha(0.0f);
-        photoFolderButton.setVisibility(View.GONE);
+        photoSettingsButton = new Button(this);
+        photoSettingsButton.setText("設定");
+        photoSettingsButton.setTextColor(Color.WHITE);
+        photoSettingsButton.setTextSize(17);
+        photoSettingsButton.setAllCaps(false);
+        photoSettingsButton.setAlpha(0.0f);
+        photoSettingsButton.setVisibility(View.GONE);
         StateListDrawable photoFolderBackground = new StateListDrawable();
         photoFolderBackground.addState(
                 new int[] { android.R.attr.state_pressed },
@@ -475,8 +518,8 @@ public final class MainActivity extends Activity
         photoFolderBackground.addState(
                 new int[] {},
                 rounded(Color.argb(68, 35, 52, 62)));
-        photoFolderButton.setBackground(photoFolderBackground);
-        photoFolderButton.setOnClickListener(new View.OnClickListener() {
+        photoSettingsButton.setBackground(photoFolderBackground);
+        photoSettingsButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 photoHandler.removeCallbacks(photoFolderButtonHider);
@@ -486,8 +529,9 @@ public final class MainActivity extends Activity
         FrameLayout.LayoutParams folderButtonParams = new FrameLayout.LayoutParams(
                 dp(150), dp(48), Gravity.TOP | Gravity.LEFT);
         folderButtonParams.setMargins(dp(12), dp(12), 0, 0);
-        page.addView(photoFolderButton, folderButtonParams);
+        page.addView(photoSettingsButton, folderButtonParams);
         updatePhotoClock();
+        applyPhotoSettings();
         return page;
     }
 
@@ -755,37 +799,108 @@ public final class MainActivity extends Activity
         updatePageIndicator();
     }
 
-    private void showPhotoFolderButton() {
-        if (photoFolderButton == null || currentPage != PHOTO_PAGE) {
+    private void showPhotoSettingsButton() {
+        if (photoSettingsButton == null || currentPage != PHOTO_PAGE) {
             return;
         }
         photoHandler.removeCallbacks(photoFolderButtonHider);
-        photoFolderButton.animate().cancel();
-        photoFolderButton.setVisibility(View.VISIBLE);
-        photoFolderButton.animate().alpha(0.82f).setDuration(180).start();
+        photoSettingsButton.animate().cancel();
+        photoSettingsButton.setVisibility(View.VISIBLE);
+        photoSettingsButton.animate().alpha(0.82f).setDuration(180).start();
         photoHandler.postDelayed(photoFolderButtonHider, 5000);
     }
 
     private void hidePhotoFolderButton() {
-        if (photoFolderButton == null || photoFolderButton.getVisibility() != View.VISIBLE) {
+        if (photoSettingsButton == null || photoSettingsButton.getVisibility() != View.VISIBLE) {
             return;
         }
-        photoFolderButton.animate().cancel();
-        photoFolderButton.animate().alpha(0.0f).setDuration(260).withEndAction(new Runnable() {
+        photoSettingsButton.animate().cancel();
+        photoSettingsButton.animate().alpha(0.0f).setDuration(260).withEndAction(new Runnable() {
             @Override
             public void run() {
-                photoFolderButton.setVisibility(View.GONE);
+                photoSettingsButton.setVisibility(View.GONE);
             }
         }).start();
     }
 
     private void hidePhotoFolderButtonImmediately() {
         photoHandler.removeCallbacks(photoFolderButtonHider);
-        if (photoFolderButton != null) {
-            photoFolderButton.animate().cancel();
-            photoFolderButton.setAlpha(0.0f);
-            photoFolderButton.setVisibility(View.GONE);
+        if (photoSettingsButton != null) {
+            photoSettingsButton.animate().cancel();
+            photoSettingsButton.setAlpha(0.0f);
+            photoSettingsButton.setVisibility(View.GONE);
         }
+    }
+
+    private void moveClockPanel(int left, int top) {
+        if (photoPage == null || clockPanel == null) {
+            return;
+        }
+        int maxLeft = Math.max(0, photoPage.getWidth() - clockPanel.getWidth());
+        int maxTop = Math.max(0, photoPage.getHeight() - clockPanel.getHeight());
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) clockPanel.getLayoutParams();
+        params.leftMargin = Math.max(0, Math.min(left, maxLeft));
+        params.topMargin = Math.max(0, Math.min(top, maxTop));
+        clockPanel.setLayoutParams(params);
+    }
+
+    private void applyClockPosition() {
+        if (photoPage == null || clockPanel == null
+                || photoPage.getWidth() <= 0 || photoPage.getHeight() <= 0) {
+            return;
+        }
+        android.content.SharedPreferences preferences = getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
+        int maxLeft = Math.max(0, photoPage.getWidth() - clockPanel.getWidth());
+        int maxTop = Math.max(0, photoPage.getHeight() - clockPanel.getHeight());
+        float xRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_X_RATIO, 1.0f);
+        float yRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_Y_RATIO, 1.0f);
+        moveClockPanel(Math.round(maxLeft * clampRatio(xRatio)),
+                Math.round(maxTop * clampRatio(yRatio)));
+    }
+
+    private void saveClockPosition() {
+        if (photoPage == null || clockPanel == null) {
+            return;
+        }
+        int maxLeft = Math.max(1, photoPage.getWidth() - clockPanel.getWidth());
+        int maxTop = Math.max(1, photoPage.getHeight() - clockPanel.getHeight());
+        getSharedPreferences(PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
+                .edit()
+                .putFloat(PhotoFolderActivity.CLOCK_X_RATIO,
+                        clampRatio((float) clockPanel.getLeft() / maxLeft))
+                .putFloat(PhotoFolderActivity.CLOCK_Y_RATIO,
+                        clampRatio((float) clockPanel.getTop() / maxTop))
+                .apply();
+    }
+
+    private float clampRatio(float value) {
+        return Math.max(0.0f, Math.min(1.0f, value));
+    }
+
+    private void applyPhotoSettings() {
+        if (clockPanel == null) {
+            return;
+        }
+        boolean showBackground = getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
+                .getBoolean(PhotoFolderActivity.CLOCK_BACKGROUND, true);
+        clockPanel.setBackground(showBackground ? rounded(Color.argb(105, 0, 0, 0)) : null);
+        applyClockPosition();
+    }
+
+    private long getPhotoIntervalMs() {
+        int seconds = getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
+                .getInt(PhotoFolderActivity.PHOTO_INTERVAL_SECONDS,
+                        DEFAULT_PHOTO_INTERVAL_SECONDS);
+        seconds = Math.max(MIN_PHOTO_INTERVAL_SECONDS,
+                Math.min(MAX_PHOTO_INTERVAL_SECONDS, seconds));
+        return seconds * 1000L;
+    }
+
+    private long getPhotoPanDurationMs() {
+        return Math.max(1000L, getPhotoIntervalMs() - 2000L);
     }
 
     private void showAdjacentPage(int direction) {
@@ -905,7 +1020,7 @@ public final class MainActivity extends Activity
             return;
         }
         updatePhotoClock();
-        nextPhotoAt = SystemClock.elapsedRealtime() + PHOTO_INTERVAL_MS;
+        nextPhotoAt = SystemClock.elapsedRealtime() + getPhotoIntervalMs();
         startPhotoPan();
         photoHandler.removeCallbacks(photoTicker);
         photoHandler.postDelayed(photoTicker, 1000);
@@ -1010,12 +1125,12 @@ public final class MainActivity extends Activity
     }
 
     private void updatePhotoClock() {
-        Date now = new Date();
+        photoClockDate.setTime(System.currentTimeMillis());
         if (photoTime != null) {
-            photoTime.setText(photoTimeFormat.format(now));
+            photoTime.setText(photoTimeFormat.format(photoClockDate));
         }
         if (photoDate != null) {
-            photoDate.setText(photoDateFormat.format(now));
+            photoDate.setText(photoDateFormat.format(photoClockDate));
         }
     }
 
@@ -1089,7 +1204,7 @@ public final class MainActivity extends Activity
                 collectPhotoFiles(
                         entry, visitedDirectories, discoveredPhotos, depth + 1);
             } else if (entry.isFile() && isSupportedPhoto(entry.getName())) {
-                discoveredPhotos.add(canonicalPath(entry));
+                discoveredPhotos.add(entry.getAbsolutePath());
             }
         }
     }
@@ -1121,7 +1236,7 @@ public final class MainActivity extends Activity
         final File file = photoFiles.get(photoIndex++);
         final int generation = photoGeneration;
         photoLoading = true;
-        nextPhotoAt = SystemClock.elapsedRealtime() + PHOTO_INTERVAL_MS;
+        nextPhotoAt = SystemClock.elapsedRealtime() + getPhotoIntervalMs();
         new Thread(new Runnable() {
             @Override
             public void run() {
