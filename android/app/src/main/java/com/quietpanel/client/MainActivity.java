@@ -191,6 +191,7 @@ public final class MainActivity extends Activity
         activityResumed = true;
         applyPhotoSettings();
         if (pcDisplayOn && currentPage == PHOTO_PAGE) {
+            hidePhotoFolderButtonImmediately();
             startPhotoSlideshow();
         }
     }
@@ -337,7 +338,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.6.1", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.6.2", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -855,6 +856,11 @@ public final class MainActivity extends Activity
                 PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
         int maxLeft = Math.max(0, photoPage.getWidth() - clockPanel.getWidth());
         int maxTop = Math.max(0, photoPage.getHeight() - clockPanel.getHeight());
+        if (!preferences.contains(PhotoFolderActivity.CLOCK_X_RATIO)
+                || !preferences.contains(PhotoFolderActivity.CLOCK_Y_RATIO)) {
+            moveClockPanel(maxLeft - dp(12), maxTop - dp(12));
+            return;
+        }
         float xRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_X_RATIO, 1.0f);
         float yRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_Y_RATIO, 1.0f);
         moveClockPanel(Math.round(maxLeft * clampRatio(xRatio)),
