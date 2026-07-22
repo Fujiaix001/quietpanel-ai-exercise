@@ -2,6 +2,10 @@
 
 > 專案目前維持穩定的 ADB 版本。完整背景、架構、版本決策、已知問題與未來重啟方式請見 [`docs/PROJECT_CLOSEOUT_2026-07-22.md`](docs/PROJECT_CLOSEOUT_2026-07-22.md)。
 
+## 給一般使用者的下載包
+
+想直接使用而不自行安裝 ADB，可下載 [`QuietPanel-v6.6.2-Windows10.zip`](dist/QuietPanel-v6.6.2-Windows10.zip)。解壓縮後先執行 `Install-Android.cmd`，再執行 `Start-QuietPanel.cmd`。手機必須開啟 USB 偵錯，第一次連接時在手機允許這台 Windows 電腦。壓縮包內含 Windows Bridge、APK 與 ADB Platform-Tools；第三方 ADB 的來源與授權說明請見包內中英文 README。
+
 ## 系統匣與頁面選擇
 
 Bridge 啟動後常駐 Windows 系統匣，不再顯示主控台視窗。點選系統匣圖示會看到六個頁面的勾選選單；取消勾選的頁面會立刻從手機的左右滑動順序中移除。Bridge 至少保留一頁，設定會儲存在 Bridge 同目錄的 `QuietPanelBridge.json`。
