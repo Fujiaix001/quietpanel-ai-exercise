@@ -3,6 +3,9 @@
 /android/build/
 /android/app/build/
 /android/local.properties
+/android/app/src/main/assets/fonts/Storopia.ttf
+/android/app/src/main/assets/fonts/NOTICE-Storopia.txt
+/local-backups/
 /dist/
 *.log
 .env

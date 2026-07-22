@@ -348,7 +348,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.4", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.8-test-nodistribute", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -966,7 +966,13 @@ public final class MainActivity extends Activity
                         Typeface.create("cursive", Typeface.NORMAL));
                 break;
             case 9:
-                typeface = systemTypeface("/system/fonts/Clockopia.ttf",
+            case 10:
+                typeface = assetTypeface("fonts/Storopia.ttf",
+                        systemTypeface("/system/fonts/Clockopia.ttf",
+                                Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)));
+                break;
+            case 11:
+                typeface = assetTypeface("fonts/Oxanium-Regular.ttf",
                         Typeface.create(Typeface.DEFAULT, Typeface.NORMAL));
                 break;
             case 0:
@@ -978,20 +984,29 @@ public final class MainActivity extends Activity
             photoTime.setTypeface(typeface);
         }
         if (photoDate != null) {
-            photoDate.setTypeface(style == 7 || style == 9
+            photoDate.setTypeface(style == 7
                     ? Typeface.create(Typeface.DEFAULT, Typeface.NORMAL) : typeface);
         }
-        photoDateEnglish = style == 7 || style == 9;
+        photoDateEnglish = style == 9 || style == 10 || style == 11;
         updatePhotoClock();
     }
 
     private boolean isPhotoClockFontStyle(int style) {
-        return style == 0 || style == 4 || style == 7 || style == 9;
+        return style == 0 || style == 4 || style == 7 || style == 9 || style == 10
+                || style == 11;
     }
 
     private Typeface systemTypeface(String path, Typeface fallback) {
         try {
             return Typeface.createFromFile(path);
+        } catch (RuntimeException ignored) {
+            return fallback;
+        }
+    }
+
+    private Typeface assetTypeface(String path, Typeface fallback) {
+        try {
+            return Typeface.createFromAsset(getAssets(), path);
         } catch (RuntimeException ignored) {
             return fallback;
         }
