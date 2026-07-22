@@ -98,6 +98,9 @@ public final class PhotoFolderActivity extends Activity {
     }
 
     private View buildInterface() {
+        ScrollView pageScroll = new ScrollView(this);
+        pageScroll.setFillViewport(true);
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(12), dp(18), dp(12));
@@ -204,15 +207,15 @@ public final class PhotoFolderActivity extends Activity {
         hint.setPadding(dp(10), 0, dp(10), dp(6));
         root.addView(hint);
 
-        ScrollView scroll = new ScrollView(this);
         folderList = new LinearLayout(this);
         folderList.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(folderList, new ScrollView.LayoutParams(
+        root.addView(folderList, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        pageScroll.addView(root, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
-        root.addView(scroll, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-        return root;
+        return pageScroll;
     }
 
     private void showDirectory() {

@@ -337,7 +337,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.6.0", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.6.1", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -456,6 +456,7 @@ public final class MainActivity extends Activity
             public boolean onTouch(View view, MotionEvent event) {
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
+                        view.getParent().requestDisallowInterceptTouchEvent(true);
                         clockDownX = event.getRawX();
                         clockDownY = event.getRawY();
                         clockDownLeft = clockPanel.getLeft();
@@ -469,6 +470,7 @@ public final class MainActivity extends Activity
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
                         saveClockPosition();
+                        view.getParent().requestDisallowInterceptTouchEvent(false);
                         return true;
                     default:
                         return true;

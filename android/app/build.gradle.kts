@@ -10,8 +10,8 @@ android {
         applicationId = "com.quietpanel.client"
         minSdk = 17
         targetSdk = 36
-        versionCode = 660
-        versionName = "6.6.0"
+        versionCode = 661
+        versionName = "6.6.1"
     }
 
     buildTypes {
