@@ -41,11 +41,21 @@ public final class HistoryGraphView extends View {
     }
 
     public void addSample(double value) {
+        addSample(value, true);
+    }
+
+    public void addSample(double value, boolean redraw) {
         samples[nextSample] = (float) Math.max(0.0, value);
         nextSample = (nextSample + 1) % SAMPLE_CAPACITY;
         if (sampleCount < SAMPLE_CAPACITY) {
             sampleCount++;
         }
+        if (redraw) {
+            invalidate();
+        }
+    }
+
+    public void redraw() {
         invalidate();
     }
 

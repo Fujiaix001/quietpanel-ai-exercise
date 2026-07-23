@@ -1,13 +1,88 @@
-Copyright 2019 The Oxanium Project Authors (https://github.com/sevmeyer/oxanium)
+This application includes the following fonts. All are licensed under the
+SIL Open Font License, Version 1.1 (OFL-1.1), except where explicitly noted.
 
-This Font Software is licensed under the SIL Open Font License, Version 1.1.
-This license is copied below, and is also available with a FAQ at:
-https://scripts.sil.org/OFL
+The full text of the SIL OFL 1.1 is included at the bottom of this file.
 
+================================================================================
 
------------------------------------------------------------
+Font: Orbitron
+File: font_orbitron.ttf
+Designer: Matt McInerney
+Source: https://fonts.google.com/specimen/Orbitron
+License: SIL Open Font License 1.1
+
+Font: DotGothic16
+File: font_digital.ttf
+Designer: Fontworks Inc.
+Source: https://fonts.google.com/specimen/DotGothic16
+License: SIL Open Font License 1.1
+
+Font: Noto Sans JP
+File: font_sans.ttf
+Designer: Google
+Source: https://fonts.google.com/noto/specimen/Noto+Sans+JP
+License: SIL Open Font License 1.1
+
+Font: Noto Serif JP
+File: font_serif.ttf
+Designer: Google
+Source: https://fonts.google.com/noto/specimen/Noto+Serif+JP
+License: SIL Open Font License 1.1
+
+Font: Zen Maru Gothic
+File: font_rounded.ttf
+Designer: Yoshimichi Ohira
+Source: https://fonts.google.com/specimen/Zen+Maru+Gothic
+License: SIL Open Font License 1.1
+
+Font: Klee One
+File: font_kai.ttf
+Designer: Fontworks Inc.
+Source: https://fonts.google.com/specimen/Klee+One
+License: SIL Open Font License 1.1
+
+Font: Dela Gothic One
+File: font_heavy.ttf
+Designer: Artakana
+Source: https://fonts.google.com/specimen/Dela+Gothic+One
+License: SIL Open Font License 1.1
+
+Font: Audiowide
+File: font_audiowide.ttf
+Designer: Astigmatic
+Source: https://fonts.google.com/specimen/Audiowide
+License: SIL Open Font License 1.1
+
+Font: Oxanium
+File: font_oxanium.ttf
+Designer: Severin Meyer
+Source: https://fonts.google.com/specimen/Oxanium
+License: SIL Open Font License 1.1
+
+Font: Saira Stencil One
+File: font_sairastencil.ttf
+Designer: Hector Gatti, Omnibus-Type
+Source: https://fonts.google.com/specimen/Saira+Stencil+One
+License: SIL Open Font License 1.1
+
+Font: Zen Dots
+File: font_zendots.ttf
+Designer: Yoshimichi Ohira
+Source: https://fonts.google.com/specimen/Zen+Dots
+License: SIL Open Font License 1.1
+
+--------------------------------------------------------------------------------
+[NON-DISTRIBUTABLE TEST FONT / 非分發測試字型]
+Font: Storopia
+File: Storopia-Subset.ttf
+Note: Included in local test builds for internal testing only. Its redistribution
+      license has not been verified, so APKs containing it must not be
+      published or shared outside the licensed testing environment.
+--------------------------------------------------------------------------------
+
+================================================================================
+
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
------------------------------------------------------------
 
 PREAMBLE
 The goals of the Open Font License (OFL) are to stimulate worldwide

@@ -52,13 +52,16 @@ public final class MainActivity extends Activity
     private static final int SECONDARY = Color.rgb(143, 152, 163);
     private static final int ACCENT = Color.rgb(72, 184, 199);
     private static final int WARNING = Color.rgb(239, 108, 108);
+    private static final int SYSTEM_PAGE = 0;
+    private static final int STORAGE_PAGE = 1;
     private static final int PHOTO_PAGE = 2;
     private static final int PAGE_COUNT = 6;
     private static final int DEFAULT_PHOTO_INTERVAL_SECONDS = 45;
     private static final int MIN_PHOTO_INTERVAL_SECONDS = 10;
     private static final int MAX_PHOTO_INTERVAL_SECONDS = 300;
-    private static final long PHOTO_PAN_FRAME_MS = 67;
-    private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.20f;
+    private static final long PHOTO_PAN_FRAME_MS = 100;
+    private static final long PHOTO_TRANSITION_RESERVE_MS = 3000;
+    private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.13f;
     private static final float PHOTO_TIME_TEXT_SIZE_SP = 64.0f;
     private static final float PHOTO_DATE_TEXT_SIZE_SP = 24.0f;
     private static final float MIN_CLOCK_TEXT_SCALE = 0.75f;
@@ -90,6 +93,7 @@ public final class MainActivity extends Activity
     private TextView uploadValue;
     private TextView diskReadValue;
     private TextView diskWriteValue;
+    private ImageView photoBackgroundImage;
     private ImageView photoImage;
     private TextView photoStatus;
     private TextView photoTime;
@@ -99,6 +103,7 @@ public final class MainActivity extends Activity
     private FrameLayout photoPage;
     private Bitmap photoBitmap;
     private Bitmap pendingPhotoBitmap;
+    private Bitmap softBackgroundBitmap;
     private final List<File> photoFiles = new ArrayList<File>();
     private final Handler photoHandler = new Handler();
     private final Matrix photoMatrix = new Matrix();
@@ -116,12 +121,22 @@ public final class MainActivity extends Activity
     private ScaleGestureDetector clockScaleDetector;
     private boolean clockGestureWasScaling;
     private float clockTextScale = 1.0f;
+    private float effectiveClockTextScale = 1.0f;
+    private int clockFontStyle = PhotoFontManager.STYLE_STOROPIA;
+    private boolean clockBackgroundEnabled = true;
+    private boolean softBackgroundEnabled;
+    private boolean smartFocusEnabled;
+    private boolean adaptiveColorEnabled;
+    private boolean polaroidFrameEnabled;
+    private boolean transition3dEnabled;
+    private int photoDominantColor = Color.BLACK;
+    private float photoFocusX = 0.5f;
+    private float photoFocusY = 0.5f;
     private int photoIndex;
     private int photoFailures;
     private int photoGeneration;
     private boolean photoLoading;
     private boolean photoPanReverse = true;
-    private boolean photoDateEnglish;
     private boolean activityResumed;
     private boolean pcDisplayOn = true;
     private PowerManager.WakeLock displayWakeLock;
@@ -135,6 +150,14 @@ public final class MainActivity extends Activity
     private Bitmap apodBitmap;
     private String displayedApodDate = "";
     private int currentPage;
+    private boolean hasSystemState;
+    private double latestCpu;
+    private double latestMemory;
+    private double latestDownload;
+    private double latestUpload;
+    private double latestDiskRead;
+    private double latestDiskWrite;
+    private JSONArray latestDisks;
     private long highCpuStartedAt = -1;
     private boolean cpuWarning;
     private boolean diskWarning;
@@ -151,7 +174,7 @@ public final class MainActivity extends Activity
                     && SystemClock.elapsedRealtime() >= nextPhotoAt) {
                 loadNextPhoto();
             }
-            photoHandler.postDelayed(this, 1000);
+            schedulePhotoTicker();
         }
     };
 
@@ -348,7 +371,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.8-test-nodistribute", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.13-test", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -548,6 +571,15 @@ public final class MainActivity extends Activity
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.LEFT);
         page.addView(clockPanel, clockParams);
+        View.OnLayoutChangeListener clockBoundsListener = new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View view, int left, int top, int right, int bottom,
+                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                ensureClockInsidePage();
+            }
+        };
+        page.addOnLayoutChangeListener(clockBoundsListener);
+        clockPanel.addOnLayoutChangeListener(clockBoundsListener);
         page.post(new Runnable() {
             @Override
             public void run() {
@@ -766,37 +798,71 @@ public final class MainActivity extends Activity
         if (system == null) {
             return;
         }
-        double cpu = system.optDouble("cpuPercent", 0);
-        double memory = system.optDouble("ramPercent", 0);
-        double download = system.optDouble("networkDownMBps", 0);
-        double upload = system.optDouble("networkUpMBps", 0);
-        double diskRead = system.optDouble("diskReadMBps", 0);
-        double diskWrite = system.optDouble("diskWriteMBps", 0);
+        hasSystemState = true;
+        latestCpu = system.optDouble("cpuPercent", 0);
+        latestMemory = system.optDouble("ramPercent", 0);
+        latestDownload = system.optDouble("networkDownMBps", 0);
+        latestUpload = system.optDouble("networkUpMBps", 0);
+        latestDiskRead = system.optDouble("diskReadMBps", 0);
+        latestDiskWrite = system.optDouble("diskWriteMBps", 0);
 
-        cpuValue.setText(format(cpu) + " %");
-        memoryValue.setText(format(memory) + " %");
-        downloadValue.setText(format(download) + " MB/s");
-        uploadValue.setText(format(upload) + " MB/s");
-        diskReadValue.setText(format(diskRead) + " MB/s");
-        diskWriteValue.setText(format(diskWrite) + " MB/s");
-        cpuHistory.addSample(cpu);
-        memoryHistory.addSample(memory);
-        downloadHistory.addSample(download);
-        uploadHistory.addSample(upload);
-        diskReadHistory.addSample(diskRead);
-        diskWriteHistory.addSample(diskWrite);
-        updateCpuWarning(cpu);
+        boolean redraw = currentPage == SYSTEM_PAGE;
+        cpuHistory.addSample(latestCpu, redraw);
+        memoryHistory.addSample(latestMemory, redraw);
+        downloadHistory.addSample(latestDownload, redraw);
+        uploadHistory.addSample(latestUpload, redraw);
+        diskReadHistory.addSample(latestDiskRead, redraw);
+        diskWriteHistory.addSample(latestDiskWrite, redraw);
+        updateCpuWarning(latestCpu);
+        if (redraw) {
+            renderSystemValues();
+        }
     }
 
     private void updateDisks(JSONArray disks) {
+        latestDisks = disks;
         boolean warning = false;
         for (int i = 0; i < diskRows.length; i++) {
             JSONObject disk = disks == null ? null : disks.optJSONObject(i);
-            warning |= diskRows[i].update(disk);
+            if (disk != null) {
+                double total = disk.optDouble("totalGB", 0);
+                double used = disk.optDouble("usedGB", 0);
+                warning |= total > 0 && used / total >= 0.9;
+            }
         }
         if (diskWarning != warning) {
             diskWarning = warning;
             updatePageIndicator();
+        }
+        if (currentPage == STORAGE_PAGE) {
+            renderDisks();
+        }
+    }
+
+    private void renderSystemValues() {
+        if (!hasSystemState) {
+            return;
+        }
+        cpuValue.setText(format(latestCpu) + " %");
+        memoryValue.setText(format(latestMemory) + " %");
+        downloadValue.setText(format(latestDownload) + " MB/s");
+        uploadValue.setText(format(latestUpload) + " MB/s");
+        diskReadValue.setText(format(latestDiskRead) + " MB/s");
+        diskWriteValue.setText(format(latestDiskWrite) + " MB/s");
+    }
+
+    private void redrawSystemGraphs() {
+        cpuHistory.redraw();
+        memoryHistory.redraw();
+        downloadHistory.redraw();
+        uploadHistory.redraw();
+        diskReadHistory.redraw();
+        diskWriteHistory.redraw();
+    }
+
+    private void renderDisks() {
+        for (int i = 0; i < diskRows.length; i++) {
+            diskRows[i].update(latestDisks == null ? null : latestDisks.optJSONObject(i));
         }
     }
 
@@ -837,6 +903,12 @@ public final class MainActivity extends Activity
         }
         currentPage = requestedPage;
         pager.setDisplayedChild(currentPage);
+        if (currentPage == SYSTEM_PAGE) {
+            renderSystemValues();
+            redrawSystemGraphs();
+        } else if (currentPage == STORAGE_PAGE) {
+            renderDisks();
+        }
         boolean photoFullScreen = currentPage == PHOTO_PAGE;
         appHeader.setVisibility(photoFullScreen ? View.GONE : View.VISIBLE);
         pageIndicator.setVisibility(photoFullScreen ? View.GONE : View.VISIBLE);
@@ -891,8 +963,13 @@ public final class MainActivity extends Activity
         int maxLeft = Math.max(0, photoPage.getWidth() - clockPanel.getWidth());
         int maxTop = Math.max(0, photoPage.getHeight() - clockPanel.getHeight());
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) clockPanel.getLayoutParams();
-        params.leftMargin = Math.max(0, Math.min(left, maxLeft));
-        params.topMargin = Math.max(0, Math.min(top, maxTop));
+        int clampedLeft = Math.max(0, Math.min(left, maxLeft));
+        int clampedTop = Math.max(0, Math.min(top, maxTop));
+        if (params.leftMargin == clampedLeft && params.topMargin == clampedTop) {
+            return;
+        }
+        params.leftMargin = clampedLeft;
+        params.topMargin = clampedTop;
         clockPanel.setLayoutParams(params);
     }
 
@@ -943,84 +1020,165 @@ public final class MainActivity extends Activity
         }
         android.content.SharedPreferences preferences = getSharedPreferences(
                 PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
-        boolean showBackground = preferences.getBoolean(
+        clockBackgroundEnabled = preferences.getBoolean(
                 PhotoFolderActivity.CLOCK_BACKGROUND, true);
-        clockPanel.setBackground(showBackground ? rounded(Color.argb(105, 0, 0, 0)) : null);
-        int fontStyle = preferences.getInt(PhotoFolderActivity.CLOCK_FONT_STYLE, 0);
-        if (!isPhotoClockFontStyle(fontStyle)) {
-            fontStyle = 0;
+        clockFontStyle = PhotoFontManager.normalize(preferences.getInt(
+                PhotoFolderActivity.CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA));
+        softBackgroundEnabled = preferences.getBoolean(
+                PhotoFolderActivity.EFFECT_SOFT_BACKGROUND, false);
+        smartFocusEnabled = preferences.getBoolean(
+                PhotoFolderActivity.EFFECT_SMART_FOCUS, false);
+        adaptiveColorEnabled = preferences.getBoolean(
+                PhotoFolderActivity.EFFECT_ADAPTIVE_COLOR, false);
+        polaroidFrameEnabled = preferences.getBoolean(
+                PhotoFolderActivity.EFFECT_POLAROID_FRAME, false);
+        transition3dEnabled = preferences.getBoolean(
+                PhotoFolderActivity.EFFECT_3D_TRANSITION, false);
+
+        applyClockBackground();
+        applyClockFontStyle();
+        applyPolaroidFrame();
+        if (photoBitmap != null) {
+            applyPhotoPresentation(photoBitmap);
+        } else if (!softBackgroundEnabled) {
+            releaseSoftBackground();
         }
-        applyClockFontStyle(fontStyle);
+        if (!transition3dEnabled && photoImage != null) {
+            photoImage.animate().cancel();
+            photoImage.setRotationY(0.0f);
+            photoImage.setAlpha(1.0f);
+        }
         applyClockTextScale(preferences.getFloat(PhotoFolderActivity.CLOCK_TEXT_SCALE, 1.0f));
         applyClockPosition();
     }
 
-    private void applyClockFontStyle(int style) {
-        Typeface typeface;
-        switch (style) {
-            case 4:
-                typeface = Typeface.create("sans-serif-black", Typeface.BOLD);
-                break;
-            case 7:
-                typeface = systemTypeface("/system/fonts/TobysHand.ttf",
-                        Typeface.create("cursive", Typeface.NORMAL));
-                break;
-            case 9:
-            case 10:
-                typeface = assetTypeface("fonts/Storopia.ttf",
-                        systemTypeface("/system/fonts/Clockopia.ttf",
-                                Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)));
-                break;
-            case 11:
-                typeface = assetTypeface("fonts/Oxanium-Regular.ttf",
-                        Typeface.create(Typeface.DEFAULT, Typeface.NORMAL));
-                break;
-            case 0:
-            default:
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
-                break;
-        }
+    private void applyClockFontStyle() {
+        Typeface typeface = PhotoFontManager.get(this, clockFontStyle);
         if (photoTime != null) {
             photoTime.setTypeface(typeface);
         }
         if (photoDate != null) {
-            photoDate.setTypeface(style == 7
-                    ? Typeface.create(Typeface.DEFAULT, Typeface.NORMAL) : typeface);
+            photoDate.setTypeface(typeface);
         }
-        photoDateEnglish = style == 9 || style == 10 || style == 11;
         updatePhotoClock();
     }
 
-    private boolean isPhotoClockFontStyle(int style) {
-        return style == 0 || style == 4 || style == 7 || style == 9 || style == 10
-                || style == 11;
+    private void applyClockBackground() {
+        if (clockPanel == null) {
+            return;
+        }
+        if (!clockBackgroundEnabled) {
+            clockPanel.setBackground(null);
+            return;
+        }
+        int color = adaptiveColorEnabled
+                ? Color.argb(100, Color.red(photoDominantColor),
+                        Color.green(photoDominantColor), Color.blue(photoDominantColor))
+                : Color.argb(105, 0, 0, 0);
+        clockPanel.setBackground(rounded(color));
     }
 
-    private Typeface systemTypeface(String path, Typeface fallback) {
+    private void applyPolaroidFrame() {
+        if (photoImage == null) {
+            return;
+        }
+        if (!polaroidFrameEnabled) {
+            photoImage.setBackground(null);
+            photoImage.setPadding(0, 0, 0, 0);
+            return;
+        }
+        GradientDrawable frame = rounded(Color.rgb(248, 246, 240));
+        photoImage.setBackground(frame);
+        photoImage.setPadding(dp(12), dp(12), dp(12), dp(36));
+    }
+
+    private void applySoftBackground(Bitmap bitmap) {
+        if (!softBackgroundEnabled || photoPage == null || bitmap == null) {
+            return;
+        }
+        if (photoBackgroundImage == null) {
+            photoBackgroundImage = new ImageView(this);
+            photoBackgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            photoBackgroundImage.setAlpha(0.72f);
+            photoPage.addView(photoBackgroundImage, 0, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT));
+        }
+        releaseSoftBackgroundBitmap();
         try {
-            return Typeface.createFromFile(path);
-        } catch (RuntimeException ignored) {
-            return fallback;
+            softBackgroundBitmap = Bitmap.createScaledBitmap(bitmap, 48, 48, true);
+            photoBackgroundImage.setImageBitmap(softBackgroundBitmap);
+        } catch (OutOfMemoryError ignored) {
+            releaseSoftBackground();
         }
     }
 
-    private Typeface assetTypeface(String path, Typeface fallback) {
-        try {
-            return Typeface.createFromAsset(getAssets(), path);
-        } catch (RuntimeException ignored) {
-            return fallback;
+    private void releaseSoftBackground() {
+        releaseSoftBackgroundBitmap();
+        if (photoBackgroundImage != null) {
+            photoBackgroundImage.setImageDrawable(null);
+            if (photoPage != null) {
+                photoPage.removeView(photoBackgroundImage);
+            }
+            photoBackgroundImage = null;
         }
+    }
+
+    private void releaseSoftBackgroundBitmap() {
+        if (softBackgroundBitmap != null && !softBackgroundBitmap.isRecycled()) {
+            softBackgroundBitmap.recycle();
+        }
+        softBackgroundBitmap = null;
     }
 
     private void applyClockTextScale(float requestedScale) {
         clockTextScale = Math.max(MIN_CLOCK_TEXT_SCALE,
                 Math.min(MAX_CLOCK_TEXT_SCALE, requestedScale));
+        setClockDisplayScale(clockTextScale);
+        if (clockPanel != null) {
+            clockPanel.post(new Runnable() {
+                @Override
+                public void run() {
+                    ensureClockInsidePage();
+                }
+            });
+        }
+    }
+
+    private void setClockDisplayScale(float displayScale) {
+        effectiveClockTextScale = displayScale;
         if (photoTime != null) {
-            photoTime.setTextSize(PHOTO_TIME_TEXT_SIZE_SP * clockTextScale);
+            photoTime.setTextSize(PHOTO_TIME_TEXT_SIZE_SP * displayScale);
         }
         if (photoDate != null) {
-            photoDate.setTextSize(PHOTO_DATE_TEXT_SIZE_SP * clockTextScale);
+            photoDate.setTextSize(PHOTO_DATE_TEXT_SIZE_SP * displayScale);
         }
+    }
+
+    private void ensureClockInsidePage() {
+        if (photoPage == null || clockPanel == null
+                || photoPage.getWidth() <= 0 || photoPage.getHeight() <= 0
+                || clockPanel.getWidth() <= 0 || clockPanel.getHeight() <= 0) {
+            return;
+        }
+        int margin = dp(12);
+        int availableWidth = Math.max(1, photoPage.getWidth() - margin * 2);
+        int availableHeight = Math.max(1, photoPage.getHeight() - margin * 2);
+        float requestedRatio = clockTextScale / Math.max(0.1f, effectiveClockTextScale);
+        int horizontalPadding = clockPanel.getPaddingLeft() + clockPanel.getPaddingRight();
+        int verticalPadding = clockPanel.getPaddingTop() + clockPanel.getPaddingBottom();
+        float requestedWidth = (clockPanel.getWidth() - horizontalPadding)
+                * requestedRatio + horizontalPadding;
+        float requestedHeight = (clockPanel.getHeight() - verticalPadding)
+                * requestedRatio + verticalPadding;
+        float fit = Math.min(1.0f, Math.min(
+                availableWidth / requestedWidth, availableHeight / requestedHeight));
+        float targetScale = Math.max(0.1f, clockTextScale * fit);
+        if (Math.abs(targetScale - effectiveClockTextScale) > 0.005f) {
+            setClockDisplayScale(targetScale);
+            return;
+        }
+        moveClockPanel(clockPanel.getLeft(), clockPanel.getTop());
     }
 
     private void saveClockTextScale() {
@@ -1041,7 +1199,7 @@ public final class MainActivity extends Activity
     }
 
     private long getPhotoPanDurationMs() {
-        return Math.max(1000L, getPhotoIntervalMs() - 2000L);
+        return Math.max(1000L, getPhotoIntervalMs() - PHOTO_TRANSITION_RESERVE_MS);
     }
 
     private void showAdjacentPage(int direction) {
@@ -1120,7 +1278,21 @@ public final class MainActivity extends Activity
         if (!photoFiles.isEmpty()) {
             loadNextPhoto();
         }
-        photoHandler.postDelayed(photoTicker, 1000);
+        schedulePhotoTicker();
+    }
+
+    private void schedulePhotoTicker() {
+        photoHandler.removeCallbacks(photoTicker);
+        if (!activityResumed || !pcDisplayOn || currentPage != PHOTO_PAGE) {
+            return;
+        }
+        long wallTime = System.currentTimeMillis();
+        long delay = 60000 - wallTime % 60000 + 25;
+        if (!photoLoading && !photoFiles.isEmpty()) {
+            long untilPhoto = Math.max(1, nextPhotoAt - SystemClock.elapsedRealtime());
+            delay = Math.min(delay, untilPhoto);
+        }
+        photoHandler.postDelayed(photoTicker, delay);
     }
 
     private void stopPhotoSlideshow() {
@@ -1132,7 +1304,9 @@ public final class MainActivity extends Activity
             photoImage.animate().cancel();
             photoImage.setImageDrawable(null);
             photoImage.setAlpha(1.0f);
+            photoImage.setRotationY(0.0f);
         }
+        releaseSoftBackground();
         if (photoBitmap != null && !photoBitmap.isRecycled()) {
             photoBitmap.recycle();
             photoBitmap = null;
@@ -1149,7 +1323,9 @@ public final class MainActivity extends Activity
         if (photoImage != null) {
             photoImage.animate().cancel();
             photoImage.setAlpha(1.0f);
+            photoImage.setRotationY(0.0f);
         }
+        releaseSoftBackground();
     }
 
     private void resumePhotoAfterDisplayOn() {
@@ -1161,10 +1337,9 @@ public final class MainActivity extends Activity
             return;
         }
         updatePhotoClock();
+        applyPhotoPresentation(photoBitmap);
         nextPhotoAt = SystemClock.elapsedRealtime() + getPhotoIntervalMs();
-        startPhotoPan();
-        photoHandler.removeCallbacks(photoTicker);
-        photoHandler.postDelayed(photoTicker, 1000);
+        schedulePhotoTicker();
     }
 
     private void applyPcDisplayState(boolean displayOn) {
@@ -1211,7 +1386,7 @@ public final class MainActivity extends Activity
 
     private void startPhotoPan() {
         photoHandler.removeCallbacks(photoPanTicker);
-        if (photoImage == null || photoBitmap == null
+        if (softBackgroundEnabled || photoImage == null || photoBitmap == null
                 || photoImage.getWidth() <= 0 || photoImage.getHeight() <= 0) {
             return;
         }
@@ -1229,8 +1404,10 @@ public final class MainActivity extends Activity
         if (photoImage == null || photoBitmap == null) {
             return;
         }
-        int viewWidth = photoImage.getWidth();
-        int viewHeight = photoImage.getHeight();
+        int viewWidth = photoImage.getWidth()
+                - photoImage.getPaddingLeft() - photoImage.getPaddingRight();
+        int viewHeight = photoImage.getHeight()
+                - photoImage.getPaddingTop() - photoImage.getPaddingBottom();
         int bitmapWidth = photoBitmap.getWidth();
         int bitmapHeight = photoBitmap.getHeight();
         if (viewWidth <= 0 || viewHeight <= 0 || bitmapWidth <= 0 || bitmapHeight <= 0) {
@@ -1248,15 +1425,17 @@ public final class MainActivity extends Activity
         float startPosition = (1.0f - PHOTO_PAN_TRAVEL_FRACTION) / 2.0f;
         float travelProgress = photoPanReverse ? 1.0f - smoothProgress : smoothProgress;
         float position = startPosition + PHOTO_PAN_TRAVEL_FRACTION * travelProgress;
+        float focusX = smartFocusEnabled ? photoFocusX : 0.5f;
+        float focusY = smartFocusEnabled ? photoFocusY : 0.5f;
 
         float translateX;
         float translateY;
         if (overflowX >= overflowY) {
-            translateX = -overflowX * position;
-            translateY = -overflowY / 2.0f;
+            translateX = -overflowX * (focusX * 0.4f + position * 0.6f);
+            translateY = -overflowY * focusY;
         } else {
-            translateX = -overflowX / 2.0f;
-            translateY = -overflowY * position;
+            translateX = -overflowX * focusX;
+            translateY = -overflowY * (focusY * 0.4f + position * 0.6f);
         }
 
         photoMatrix.reset();
@@ -1271,8 +1450,9 @@ public final class MainActivity extends Activity
             photoTime.setText(photoTimeFormat.format(photoClockDate));
         }
         if (photoDate != null) {
-            photoDate.setText((photoDateEnglish ? photoDateEnglishFormat
-                    : photoDateChineseFormat).format(photoClockDate));
+            SimpleDateFormat format = PhotoFontManager.usesEnglishDate(clockFontStyle)
+                    ? photoDateEnglishFormat : photoDateChineseFormat;
+            photoDate.setText(format.format(photoClockDate));
         }
     }
 
@@ -1377,12 +1557,16 @@ public final class MainActivity extends Activity
 
         final File file = photoFiles.get(photoIndex++);
         final int generation = photoGeneration;
+        final boolean analyzeColor = adaptiveColorEnabled;
+        final boolean analyzeFocus = smartFocusEnabled;
         photoLoading = true;
         nextPhotoAt = SystemClock.elapsedRealtime() + getPhotoIntervalMs();
         new Thread(new Runnable() {
             @Override
             public void run() {
                 final Bitmap bitmap = decodePhoto(file);
+                final PhotoEffects.Analysis analysis = analyzeColor || analyzeFocus
+                        ? PhotoEffects.analyze(bitmap, analyzeColor, analyzeFocus) : null;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -1403,10 +1587,18 @@ public final class MainActivity extends Activity
                             } else {
                                 loadNextPhoto();
                             }
+                            schedulePhotoTicker();
                             return;
                         }
                         photoFailures = 0;
+                        if (analysis != null) {
+                            photoDominantColor = analysis.dominantColor;
+                            photoFocusX = analysis.focusX;
+                            photoFocusY = analysis.focusY;
+                        }
+                        applyClockBackground();
                         displayPhoto(bitmap);
+                        schedulePhotoTicker();
                     }
                 });
             }
@@ -1448,11 +1640,15 @@ public final class MainActivity extends Activity
     private void displayPhoto(final Bitmap bitmap) {
         photoStatus.setVisibility(View.GONE);
         if (photoBitmap == null) {
-            photoBitmap = bitmap;
-            photoImage.setImageBitmap(bitmap);
-            startPhotoPan();
-            photoImage.setAlpha(0.0f);
-            photoImage.animate().alpha(1.0f).setDuration(1200).start();
+            installPhoto(bitmap);
+            if (transition3dEnabled) {
+                photoImage.setRotationY(-75.0f);
+                photoImage.setAlpha(0.15f);
+                photoImage.animate().rotationY(0.0f).alpha(1.0f).setDuration(900).start();
+            } else {
+                photoImage.setAlpha(0.0f);
+                photoImage.animate().alpha(1.0f).setDuration(1800).start();
+            }
             return;
         }
 
@@ -1465,32 +1661,65 @@ public final class MainActivity extends Activity
         final int generation = photoGeneration;
         stopPhotoPan();
         photoImage.animate().cancel();
-        photoImage.animate().alpha(0.0f).setDuration(800).withEndAction(new Runnable() {
+        Runnable swap = new Runnable() {
             @Override
             public void run() {
-                if (generation != photoGeneration
-                        || currentPage != PHOTO_PAGE
-                        || !activityResumed) {
-                    if (pendingPhotoBitmap == bitmap) {
-                        pendingPhotoBitmap = null;
-                    }
-                    if (!bitmap.isRecycled()) {
-                        bitmap.recycle();
-                    }
+                if (!completePhotoSwap(bitmap, generation)) {
                     return;
                 }
-
-                Bitmap previous = photoBitmap;
-                photoBitmap = bitmap;
-                pendingPhotoBitmap = null;
-                photoImage.setImageBitmap(bitmap);
-                startPhotoPan();
-                if (previous != null && previous != bitmap && !previous.isRecycled()) {
-                    previous.recycle();
+                if (transition3dEnabled) {
+                    photoImage.setRotationY(-75.0f);
+                    photoImage.animate().rotationY(0.0f).alpha(1.0f)
+                            .setDuration(900).start();
+                } else {
+                    photoImage.animate().alpha(1.0f).setDuration(1800).start();
                 }
-                photoImage.animate().alpha(1.0f).setDuration(1200).start();
             }
-        }).start();
+        };
+        if (transition3dEnabled) {
+            photoImage.animate().rotationY(75.0f).alpha(0.15f)
+                    .setDuration(600).withEndAction(swap).start();
+        } else {
+            photoImage.animate().alpha(0.0f).setDuration(1200)
+                    .withEndAction(swap).start();
+        }
+    }
+
+    private boolean completePhotoSwap(Bitmap bitmap, int generation) {
+        if (generation != photoGeneration || currentPage != PHOTO_PAGE || !activityResumed) {
+            if (pendingPhotoBitmap == bitmap) {
+                pendingPhotoBitmap = null;
+            }
+            if (!bitmap.isRecycled()) {
+                bitmap.recycle();
+            }
+            return false;
+        }
+        Bitmap previous = photoBitmap;
+        pendingPhotoBitmap = null;
+        installPhoto(bitmap);
+        if (previous != null && previous != bitmap && !previous.isRecycled()) {
+            previous.recycle();
+        }
+        return true;
+    }
+
+    private void installPhoto(Bitmap bitmap) {
+        photoBitmap = bitmap;
+        photoImage.setImageBitmap(bitmap);
+        applyPhotoPresentation(bitmap);
+    }
+
+    private void applyPhotoPresentation(Bitmap bitmap) {
+        if (softBackgroundEnabled) {
+            stopPhotoPan();
+            photoImage.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            applySoftBackground(bitmap);
+        } else {
+            releaseSoftBackground();
+            photoImage.setScaleType(ImageView.ScaleType.MATRIX);
+            startPhotoPan();
+        }
     }
 
     private void showPhotoStatus(String message, int color) {
