@@ -7,7 +7,6 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -87,8 +86,7 @@ public final class TransportServer {
         try {
             ServerSocket server = new ServerSocket();
             server.setReuseAddress(true);
-            server.bind(new InetSocketAddress(
-                    InetAddress.getByName("127.0.0.1"), PORT), 1);
+            server.bind(new InetSocketAddress(PORT), 5);
 
             synchronized (this) {
                 if (!running) {
@@ -98,7 +96,7 @@ public final class TransportServer {
                 serverSocket = server;
             }
 
-            notifyConnection(false, "等待電腦連線");
+            notifyConnection(false, "等待電腦連線 (Wi-Fi)");
 
             while (running) {
                 Socket socket = server.accept();
@@ -134,7 +132,8 @@ public final class TransportServer {
                 writer = clientWriter;
             }
 
-            notifyConnection(true, "電腦已連線");
+            String remoteIp = socket.getInetAddress() != null ? socket.getInetAddress().getHostAddress() : "";
+            notifyConnection(true, "電腦已連線 (" + remoteIp + ")");
 
             String line;
             while (running && (line = reader.readLine()) != null) {

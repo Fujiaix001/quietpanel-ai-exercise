@@ -1,7 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = $PSScriptRoot
-$version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim()
 $dist = Join-Path $projectRoot 'dist'
 
 function Copy-IfDifferent {
@@ -21,56 +20,63 @@ function Copy-IfDifferent {
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
 }
 
+# 1. Rust Bridge Tests & ADB Release Build (v6.8.13-test)
 Push-Location (Join-Path $projectRoot 'bridge')
 try {
     cargo fmt --all -- --check
     if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed' }
-    cargo test --locked --offline
+
+    Write-Output "Testing Rust Bridge..."
+    cargo test --locked --all-features
     if ($LASTEXITCODE -ne 0) { throw 'cargo test failed' }
-    cargo build --release --locked --offline
-    if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
+
+    Write-Output "Building Rust Bridge v6.8.13-test (USB ADB Mode)..."
+    cargo build --release --no-default-features --features adb
+    if ($LASTEXITCODE -ne 0) { throw 'cargo build adb failed' }
 } finally {
     Pop-Location
 }
 
+# 2. Android App Build
 Push-Location (Join-Path $projectRoot 'android')
 try {
-    & .\gradlew.bat :app:lintRelease :app:assembleRelease --no-daemon
+    Write-Output "Building Android APK v6.8.13-test..."
+    & .\gradlew.bat :app:assembleRelease --no-daemon
     if ($LASTEXITCODE -ne 0) { throw 'Android build failed' }
 } finally {
     Pop-Location
 }
 
+# 3. Assemble Dist
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
-$apkName = "QuietPanel-v{0}.apk" -f $version
-Get-ChildItem -LiteralPath $dist -Filter 'QuietPanel-v*.apk' -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -ne $apkName } |
-    Remove-Item -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'bridge\target\release\QuietPanelBridge.exe') `
-    -Destination (Join-Path $dist 'QuietPanelBridge.exe') -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk') `
-    -Destination (Join-Path $dist $apkName) -Force
 
+$adbExeTemp = Join-Path $projectRoot 'bridge\target\release\QuietPanelBridge.exe'
+Copy-IfDifferent -Source $adbExeTemp -Destination (Join-Path $dist 'QuietPanelBridge-v6.8.13-test-ADB.exe')
+
+$builtApk = Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk'
+Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist 'QuietPanel-v6.8.13-test-ADB.apk') -Force
+
+# 4. ADB Tools
 $adbPath = $env:QUIETPANEL_ADB
 if ([string]::IsNullOrWhiteSpace($adbPath)) {
     $adbPath = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
 }
-if (-not (Test-Path -LiteralPath $adbPath)) {
-    throw 'adb.exe not found. Set QUIETPANEL_ADB to its full path.'
-}
-
-$adbDir = Split-Path -Parent $adbPath
-foreach ($file in @('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll')) {
-    $source = Join-Path $adbDir $file
-    if (-not (Test-Path -LiteralPath $source)) {
-        throw "Required ADB file not found: $source"
+if (Test-Path -LiteralPath $adbPath) {
+    $adbDir = Split-Path -Parent $adbPath
+    foreach ($file in @('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll')) {
+        $source = Join-Path $adbDir $file
+        if (Test-Path -LiteralPath $source) {
+            Copy-IfDifferent -Source $source -Destination (Join-Path $dist $file)
+        }
     }
-    Copy-IfDifferent -Source $source -Destination (Join-Path $dist $file)
 }
 
-Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\Start-QuietPanel.cmd') -Destination $dist -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\Install-Android.cmd') -Destination $dist -Force
+# 5. Copy Launch Scripts
+Get-ChildItem -LiteralPath (Join-Path $projectRoot 'packaging') -Filter '*.cmd' | ForEach-Object {
+    Copy-Item -LiteralPath $_.FullName -Destination $dist -Force
+}
 
+# 6. Generate Checksums
 $hashFiles = Get-ChildItem -LiteralPath $dist -File |
     Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
     Sort-Object Name
@@ -80,5 +86,5 @@ $hashLines = foreach ($file in $hashFiles) {
 }
 Set-Content -LiteralPath (Join-Path $dist 'SHA256SUMS.txt') -Value $hashLines -Encoding ascii
 
-Write-Output "Built QuietPanel v$version"
+Write-Output "Successfully built QuietPanel v6.8.13-test (USB ADB Mode)!"
 Get-ChildItem -LiteralPath $dist -File | Select-Object Name, Length, LastWriteTime

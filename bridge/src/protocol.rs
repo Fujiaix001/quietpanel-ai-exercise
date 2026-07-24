@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-pub const VERSION: &str = "6.8.13-test";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ActionRequest {

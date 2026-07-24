@@ -13,6 +13,16 @@ pub fn load_pages() -> [bool; PAGE_COUNT] {
     parse_pages(&text).unwrap_or(DEFAULT_PAGES)
 }
 
+#[allow(dead_code)]
+pub fn load_phone_ip() -> Option<String> {
+    let text = fs::read_to_string(settings_path()).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    value
+        .get("phone_ip")
+        .and_then(Value::as_str)
+        .map(String::from)
+}
+
 pub fn save_pages(pages: &[bool; PAGE_COUNT]) {
     if !pages.iter().any(|enabled| *enabled) {
         return;

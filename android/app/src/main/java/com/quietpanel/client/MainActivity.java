@@ -1626,15 +1626,22 @@ public final class MainActivity extends Activity
             sample *= 2;
         }
 
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inSampleSize = sample;
-        options.inPreferredConfig = Bitmap.Config.RGB_565;
-        options.inDither = true;
-        try {
-            return BitmapFactory.decodeFile(file.getAbsolutePath(), options);
-        } catch (OutOfMemoryError ignored) {
-            return null;
+        while (sample <= 64) {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = sample;
+            options.inPreferredConfig = Bitmap.Config.RGB_565;
+            options.inDither = true;
+            try {
+                Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+                if (bitmap != null) {
+                    return bitmap;
+                }
+            } catch (OutOfMemoryError oom) {
+                System.gc();
+            }
+            sample *= 2;
         }
+        return null;
     }
 
     private void displayPhoto(final Bitmap bitmap) {
