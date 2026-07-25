@@ -171,7 +171,7 @@ public final class TransportServer {
                 JSONObject acknowledgement = new JSONObject();
                 acknowledgement.put("v", 1);
                 acknowledgement.put("type", "hello_ack");
-                acknowledgement.put("version", "6.8.16.1-test");
+                acknowledgement.put("version", "6.8.16.2-test");
                 writeMessage(acknowledgement);
             } else if ("display_state".equals(type)) {
                 listener.onDisplayStateChanged(message.optBoolean("on", true));

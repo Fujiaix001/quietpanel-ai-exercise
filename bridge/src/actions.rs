@@ -172,18 +172,32 @@ fn hotkey_three(mod1: u16, mod2: u16, key: u16) {
     }
 }
 
+fn get_browser_launch_args() -> String {
+    let chrome_paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ];
+    for path in chrome_paths {
+        if std::path::Path::new(path).exists() {
+            return format!(
+                r#"/c start "" "{}" --new-window "https://www.youtube.com""#,
+                path
+            );
+        }
+    }
+    r#"/c start msedge --new-window "https://www.youtube.com""#.to_string()
+}
+
 fn open_youtube() -> ActionOutcome {
     let cmd: Vec<u16> = "cmd.exe".encode_utf16().chain(std::iter::once(0)).collect();
-    let args: Vec<u16> = "/c start chrome --new-window \"https://www.youtube.com\" || start msedge --new-window \"https://www.youtube.com\" || start https://www.youtube.com"
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
+    let args_str = get_browser_launch_args();
+    let args: Vec<u16> = args_str.encode_utf16().chain(std::iter::once(0)).collect();
 
     unsafe {
         ShellExecuteW(null_mut(), null(), cmd.as_ptr(), args.as_ptr(), null(), 0);
     }
 
-    thread::sleep(Duration::from_millis(400));
+    thread::sleep(Duration::from_millis(750));
     hotkey_three(VK_LWIN, VK_SHIFT, VK_RIGHT);
 
     ActionOutcome::success("YouTube 已於第二螢幕開啟")

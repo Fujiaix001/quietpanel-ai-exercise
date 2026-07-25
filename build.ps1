@@ -20,7 +20,7 @@ function Copy-IfDifferent {
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
 }
 
-# 1. Rust Bridge Tests & ADB Release Build (v6.8.16.1-test)
+# 1. Rust Bridge Tests & ADB Release Build (v6.8.16.2-test)
 Push-Location (Join-Path $projectRoot 'bridge')
 try {
     cargo fmt --all -- --check
@@ -30,7 +30,7 @@ try {
     cargo test --locked --all-features
     if ($LASTEXITCODE -ne 0) { throw 'cargo test failed' }
 
-    Write-Output "Building Rust Bridge v6.8.16.1-test (USB ADB Mode)..."
+    Write-Output "Building Rust Bridge v6.8.16.2-test (USB ADB Mode)..."
     cargo build --release --no-default-features --features adb
     if ($LASTEXITCODE -ne 0) { throw 'cargo build adb failed' }
 } finally {
@@ -40,7 +40,7 @@ try {
 # 2. Android App Build
 Push-Location (Join-Path $projectRoot 'android')
 try {
-    Write-Output "Building Android APK v6.8.16.1-test..."
+    Write-Output "Building Android APK v6.8.16.2-test..."
     & .\gradlew.bat :app:assembleRelease --no-daemon
     if ($LASTEXITCODE -ne 0) { throw 'Android build failed' }
 } finally {
@@ -51,10 +51,10 @@ try {
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
 $adbExeTemp = Join-Path $projectRoot 'bridge\target\release\QuietPanelBridge.exe'
-Copy-IfDifferent -Source $adbExeTemp -Destination (Join-Path $dist 'QuietPanelBridge-v6.8.16.1-test-ADB.exe')
+Copy-IfDifferent -Source $adbExeTemp -Destination (Join-Path $dist 'QuietPanelBridge-v6.8.16.2-test-ADB.exe')
 
 $builtApk = Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk'
-Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist 'QuietPanel-v6.8.16.1-test-ADB.apk') -Force
+Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist 'QuietPanel-v6.8.16.2-test-ADB.apk') -Force
 
 # 4. ADB Tools
 $adbPath = $env:QUIETPANEL_ADB
@@ -86,5 +86,5 @@ $hashLines = foreach ($file in $hashFiles) {
 }
 Set-Content -LiteralPath (Join-Path $dist 'SHA256SUMS.txt') -Value $hashLines -Encoding ascii
 
-Write-Output "Successfully built QuietPanel v6.8.16.1-test (USB ADB Mode)!"
+Write-Output "Successfully built QuietPanel v6.8.16.2-test (USB ADB Mode)!"
 Get-ChildItem -LiteralPath $dist -File | Select-Object Name, Length, LastWriteTime
