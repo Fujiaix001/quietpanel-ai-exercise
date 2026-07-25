@@ -20,7 +20,7 @@ function Copy-IfDifferent {
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
 }
 
-# 1. Rust Bridge Tests & Release Build (v8.1.2 Wi-Fi + Bluetooth Dual Mode)
+# 1. Rust Bridge Tests & Release Build (v8.1.3 Wi-Fi + Bluetooth Dual Mode)
 Push-Location (Join-Path $projectRoot 'bridge')
 try {
     cargo fmt --all -- --check
@@ -30,7 +30,7 @@ try {
     cargo test --locked --all-features
     if ($LASTEXITCODE -ne 0) { throw 'cargo test failed' }
 
-    Write-Output "Building Rust Bridge v8.1.2 (Wi-Fi + Bluetooth Dual Mode)..."
+    Write-Output "Building Rust Bridge v8.1.3 (Wi-Fi + Bluetooth Dual Mode)..."
     cargo build --release
     if ($LASTEXITCODE -ne 0) { throw 'cargo build wifi failed' }
 } finally {
@@ -40,7 +40,7 @@ try {
 # 2. Android App Build
 Push-Location (Join-Path $projectRoot 'android')
 try {
-    Write-Output "Building Android APK v8.1.2..."
+    Write-Output "Building Android APK v8.1.3..."
     & .\gradlew.bat :app:assembleRelease --no-daemon
     if ($LASTEXITCODE -ne 0) { throw 'Android build failed' }
 } finally {
@@ -51,11 +51,11 @@ try {
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
 $wifiExeTemp = Join-Path $projectRoot 'bridge\target\release\QuietPanelBridge.exe'
-Copy-IfDifferent -Source $wifiExeTemp -Destination (Join-Path $dist 'QuietPanelBridge-v8.1.2.exe')
+Copy-IfDifferent -Source $wifiExeTemp -Destination (Join-Path $dist 'QuietPanelBridge-v8.1.3.exe')
 Copy-IfDifferent -Source $wifiExeTemp -Destination (Join-Path $dist 'QuietPanelBridge.exe')
 
 $builtApk = Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk'
-Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist 'QuietPanel-v8.1.2.apk') -Force
+Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist 'QuietPanel-v8.1.3.apk') -Force
 
 # 4. ADB Tools
 $adbPath = $env:QUIETPANEL_ADB

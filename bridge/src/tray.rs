@@ -135,6 +135,8 @@ unsafe fn tray_loop() {
         std::ptr::null(),
     );
     if window.is_null() {
+        let err = windows_sys::Win32::Foundation::GetLastError();
+        eprintln!("CreateWindowExW failed with error code: {}", err);
         if let Some(shared) = SHARED.get() {
             shared.running.store(false, Ordering::Relaxed);
         }

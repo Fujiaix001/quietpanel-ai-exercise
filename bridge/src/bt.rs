@@ -1,12 +1,16 @@
 use std::io::{self, Read, Write};
 use std::time::Duration;
-use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::Devices::Communication::{SetCommTimeouts, COMMTIMEOUTS};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
+};
 use windows_sys::Win32::Networking::WinSock::{
     closesocket, connect, recv, send, setsockopt, socket, WSALookupServiceBeginW,
     WSALookupServiceEnd, WSALookupServiceNextW, WSAStartup, LUP_FLUSHPREVIOUS, LUP_RETURN_ADDR,
     LUP_RETURN_NAME, SOCKET, SOCKET_ERROR, SOCK_STREAM, SOL_SOCKET, SO_RCVTIMEO, SO_SNDTIMEO,
     WSADATA, WSAQUERYSETW,
 };
+use windows_sys::Win32::Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING};
 
 pub const AF_BTH: u16 = 32;
 pub const BTHPROTO_RFCOMM: u32 = 3;
@@ -74,8 +78,13 @@ extern "system" {
     pub fn BluetoothFindDeviceClose(hFind: HANDLE) -> i32;
 }
 
+enum BtHandle {
+    Socket(SOCKET),
+    ComPort(HANDLE),
+}
+
 pub struct BluetoothStream {
-    socket: SOCKET,
+    handle: BtHandle,
 }
 
 unsafe impl Send for BluetoothStream {}
@@ -114,6 +123,15 @@ pub fn query_bluetooth_sdp(mac_addr: u64) {
 
 impl BluetoothStream {
     pub fn discover_and_connect() -> Option<(Self, String)> {
+        // 1. Try Windows Serial COM Ports (COM4, COM5, COM3, COM6, COM1..COM16)
+        let candidate_ports = [4, 5, 3, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        for &port in &candidate_ports {
+            if let Ok(stream) = Self::connect_com_port(port) {
+                return Some((stream, format!("串口 COM{port}")));
+            }
+        }
+
+        // 2. Fallback to Winsock RFCOMM sockets
         let devices = discover_paired_devices();
         if devices.is_empty() {
             return None;
@@ -126,6 +144,38 @@ impl BluetoothStream {
         }
 
         None
+    }
+
+    pub fn connect_com_port(port_num: u32) -> io::Result<Self> {
+        let name_str = format!("\\\\.\\COM{}\0", port_num);
+        let wide_name: Vec<u16> = name_str.encode_utf16().collect();
+        unsafe {
+            let handle = CreateFileW(
+                wide_name.as_ptr(),
+                GENERIC_READ | GENERIC_WRITE,
+                0,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                std::ptr::null_mut(),
+            );
+            if handle == INVALID_HANDLE_VALUE {
+                return Err(io::Error::last_os_error());
+            }
+
+            let mut timeouts = COMMTIMEOUTS {
+                ReadIntervalTimeout: 50,
+                ReadTotalTimeoutMultiplier: 10,
+                ReadTotalTimeoutConstant: 500,
+                WriteTotalTimeoutMultiplier: 10,
+                WriteTotalTimeoutConstant: 500,
+            };
+            SetCommTimeouts(handle, &mut timeouts);
+
+            Ok(Self {
+                handle: BtHandle::ComPort(handle),
+            })
+        }
     }
 
     pub fn connect_spp(mac_addr: u64) -> io::Result<Self> {
@@ -182,74 +232,148 @@ impl BluetoothStream {
                 return Err(err);
             }
 
-            Ok(BluetoothStream { socket: s })
+            Ok(BluetoothStream {
+                handle: BtHandle::Socket(s),
+            })
         }
     }
 
     pub fn try_clone(&self) -> io::Result<Self> {
-        Ok(BluetoothStream {
-            socket: self.socket,
-        })
+        match self.handle {
+            BtHandle::Socket(s) => Ok(BluetoothStream {
+                handle: BtHandle::Socket(s),
+            }),
+            BtHandle::ComPort(h) => Ok(BluetoothStream {
+                handle: BtHandle::ComPort(h),
+            }),
+        }
     }
 
     pub fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        let ms = match dur {
-            Some(d) => d.as_millis() as u32,
-            None => 0,
-        };
-        unsafe {
-            setsockopt(
-                self.socket,
-                SOL_SOCKET as i32,
-                SO_RCVTIMEO as i32,
-                &ms as *const _ as *const _,
-                std::mem::size_of::<u32>() as i32,
-            );
+        match self.handle {
+            BtHandle::Socket(s) => {
+                let ms = match dur {
+                    Some(d) => d.as_millis() as u32,
+                    None => 0,
+                };
+                unsafe {
+                    setsockopt(
+                        s,
+                        SOL_SOCKET as i32,
+                        SO_RCVTIMEO as i32,
+                        &ms as *const _ as *const _,
+                        std::mem::size_of::<u32>() as i32,
+                    );
+                }
+                Ok(())
+            }
+            BtHandle::ComPort(_) => Ok(()),
         }
-        Ok(())
     }
 
     pub fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        let ms = match dur {
-            Some(d) => d.as_millis() as u32,
-            None => 0,
-        };
-        unsafe {
-            setsockopt(
-                self.socket,
-                SOL_SOCKET as i32,
-                SO_SNDTIMEO as i32,
-                &ms as *const _ as *const _,
-                std::mem::size_of::<u32>() as i32,
-            );
+        match self.handle {
+            BtHandle::Socket(s) => {
+                let ms = match dur {
+                    Some(d) => d.as_millis() as u32,
+                    None => 0,
+                };
+                unsafe {
+                    setsockopt(
+                        s,
+                        SOL_SOCKET as i32,
+                        SO_SNDTIMEO as i32,
+                        &ms as *const _ as *const _,
+                        std::mem::size_of::<u32>() as i32,
+                    );
+                }
+                Ok(())
+            }
+            BtHandle::ComPort(_) => Ok(()),
         }
-        Ok(())
     }
 }
 
 impl Read for BluetoothStream {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let res = unsafe { recv(self.socket, buf.as_mut_ptr() as *mut _, buf.len() as i32, 0) };
-        if res == SOCKET_ERROR {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(res as usize)
+        match self.handle {
+            BtHandle::Socket(s) => {
+                let res = unsafe { recv(s, buf.as_mut_ptr() as *mut _, buf.len() as i32, 0) };
+                if res == SOCKET_ERROR {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(res as usize)
+                }
+            }
+            BtHandle::ComPort(h) => {
+                let mut bytes_read: u32 = 0;
+                let res = unsafe {
+                    ReadFile(
+                        h,
+                        buf.as_mut_ptr() as *mut _,
+                        buf.len() as u32,
+                        &mut bytes_read,
+                        std::ptr::null_mut(),
+                    )
+                };
+                if res == 0 {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(bytes_read as usize)
+                }
+            }
         }
     }
 }
 
 impl Write for BluetoothStream {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let res = unsafe { send(self.socket, buf.as_ptr() as *const _, buf.len() as i32, 0) };
-        if res == SOCKET_ERROR {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(res as usize)
+        match self.handle {
+            BtHandle::Socket(s) => {
+                let res = unsafe { send(s, buf.as_ptr() as *const _, buf.len() as i32, 0) };
+                if res == SOCKET_ERROR {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(res as usize)
+                }
+            }
+            BtHandle::ComPort(h) => {
+                let mut bytes_written: u32 = 0;
+                let res = unsafe {
+                    WriteFile(
+                        h,
+                        buf.as_ptr() as *const _,
+                        buf.len() as u32,
+                        &mut bytes_written,
+                        std::ptr::null_mut(),
+                    )
+                };
+                if res == 0 {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(bytes_written as usize)
+                }
+            }
         }
     }
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl Drop for BluetoothStream {
+    fn drop(&mut self) {
+        unsafe {
+            match self.handle {
+                BtHandle::Socket(s) => {
+                    closesocket(s);
+                }
+                BtHandle::ComPort(h) => {
+                    CloseHandle(h);
+                }
+            }
+        }
     }
 }
 
