@@ -275,7 +275,18 @@ pub fn discover_paired_devices() -> Vec<(u64, String, bool)> {
             loop {
                 let name_len = info.szName.iter().position(|&c| c == 0).unwrap_or(248);
                 let name = String::from_utf16_lossy(&info.szName[..name_len]);
-                list.push((info.Address, name, info.fConnected != 0));
+                let upper_name = name.to_uppercase();
+                let is_ignored = upper_name.contains("SPEAKER")
+                    || upper_name.contains("AUDIO")
+                    || upper_name.contains("EARBUD")
+                    || upper_name.contains("HEADSET")
+                    || upper_name.contains("HEADPHONE")
+                    || upper_name.contains("MOUSE")
+                    || upper_name.contains("KEYBOARD");
+
+                if !is_ignored {
+                    list.push((info.Address, name, info.fConnected != 0));
+                }
 
                 info = std::mem::zeroed();
                 info.dwSize = std::mem::size_of::<BLUETOOTH_DEVICE_INFO>() as u32;

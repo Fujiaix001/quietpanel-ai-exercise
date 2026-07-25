@@ -1,6 +1,7 @@
 package com.quietpanel.client;
 
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 
@@ -15,6 +16,7 @@ import java.io.OutputStreamWriter;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -202,6 +204,14 @@ public final class TransportServer {
                 }
                 notifyConnection(false, "等待藍牙連線 (SPP)…");
 
+                // Start active client reconnect thread to wake up Windows ACL link
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        tryBluetoothClientConnect(adapter);
+                    }
+                }).start();
+
                 while (running) {
                     BluetoothSocket btSocket = btServerSocket.accept();
                     if (!running) {
@@ -240,6 +250,43 @@ public final class TransportServer {
                     closeQuietly(btServerSocket);
                     btServerSocket = null;
                 }
+            }
+        }
+    }
+
+    private void tryBluetoothClientConnect(BluetoothAdapter adapter) {
+        if (activeClientSocket != null || !running) return;
+        Set<BluetoothDevice> pairedDevices = adapter.getBondedDevices();
+        if (pairedDevices == null || pairedDevices.isEmpty()) return;
+
+        for (BluetoothDevice device : pairedDevices) {
+            if (activeClientSocket != null || !running) break;
+            BluetoothSocket clientSocket = null;
+            try {
+                try {
+                    clientSocket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+                } catch (Exception e) {
+                    clientSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                }
+                clientSocket.connect();
+                synchronized (this) {
+                    if (activeClientSocket != null) {
+                        closeQuietly(clientSocket);
+                        return;
+                    }
+                    activeClientSocket = clientSocket;
+                }
+                BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(clientSocket.getInputStream(), "UTF-8"));
+                BufferedWriter bw = new BufferedWriter(
+                        new OutputStreamWriter(clientSocket.getOutputStream(), "UTF-8"));
+                synchronized (this) {
+                    writer = bw;
+                }
+                handleStreamSession(reader, clientSocket, "藍牙連線 (" + device.getName() + ")");
+                return;
+            } catch (Exception ignored) {
+                closeQuietly(clientSocket);
             }
         }
     }
@@ -283,7 +330,7 @@ public final class TransportServer {
                 JSONObject acknowledgement = new JSONObject();
                 acknowledgement.put("v", 1);
                 acknowledgement.put("type", "hello_ack");
-                acknowledgement.put("version", "8.1.1");
+                acknowledgement.put("version", "8.1.2");
                 writeMessage(acknowledgement);
             } else if ("display_state".equals(type)) {
                 listener.onDisplayStateChanged(message.optBoolean("on", true));
