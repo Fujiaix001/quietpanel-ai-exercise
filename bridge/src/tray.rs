@@ -118,9 +118,7 @@ unsafe fn tray_loop() {
     window_class.lpfnWndProc = Some(window_proc);
     window_class.hInstance = instance;
     window_class.lpszClassName = CLASS_NAME.as_ptr();
-    if RegisterClassW(&window_class) == 0 {
-        return;
-    }
+    RegisterClassW(&window_class);
 
     let window = CreateWindowExW(
         0,
@@ -137,6 +135,9 @@ unsafe fn tray_loop() {
         std::ptr::null(),
     );
     if window.is_null() {
+        if let Some(shared) = SHARED.get() {
+            shared.running.store(false, Ordering::Relaxed);
+        }
         return;
     }
     add_icon(window);
