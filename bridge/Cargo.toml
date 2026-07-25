@@ -1,6 +1,6 @@
 [package]
 name = "quietpanel-bridge"
-version = "6.8.16-test"
+version = "6.8.16-test.1"
 edition = "2021"
 
 [[bin]]

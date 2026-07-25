@@ -130,6 +130,7 @@ public final class MainActivity extends Activity
     private float clockTextScale = 1.0f;
     private float effectiveClockTextScale = 1.0f;
     private int clockFontStyle = PhotoFontManager.STYLE_STOROPIA;
+    private View.OnTouchListener clockTouchListener;
     private boolean clockBackgroundEnabled = true;
     private boolean softBackgroundEnabled;
     private boolean smartFocusEnabled;
@@ -378,7 +379,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.16-test", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.16.1-test", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -526,7 +527,7 @@ public final class MainActivity extends Activity
                         }
                     }
                 });
-        clockPanel.setOnTouchListener(new View.OnTouchListener() {
+        clockTouchListener = new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
                 clockScaleDetector.onTouchEvent(event);
@@ -560,7 +561,8 @@ public final class MainActivity extends Activity
                         return true;
                 }
             }
-        });
+        };
+        clockPanel.setOnTouchListener(clockTouchListener);
 
         photoTime = makeText("", PHOTO_TIME_TEXT_SIZE_SP, Color.WHITE, Gravity.RIGHT);
         photoTime.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1008,6 +1010,9 @@ public final class MainActivity extends Activity
             }
             if (workButtonsContainer != null) {
                 workButtonsContainer.setVisibility(currentPage == WORK_PHOTO_PAGE ? View.VISIBLE : View.GONE);
+            }
+            if (clockPanel != null) {
+                clockPanel.setOnTouchListener(currentPage == PHOTO_PAGE ? clockTouchListener : null);
             }
             if (currentPage != PHOTO_PAGE) {
                 hidePhotoFolderButtonImmediately();
