@@ -158,7 +158,8 @@ unsafe fn add_icon(hwnd: HWND) {
         hIcon: LoadIconW(std::ptr::null_mut(), IDI_APPLICATION),
         ..Default::default()
     };
-    copy_utf16(&mut icon.szTip, "QuietPanel Bridge v6.8.13-test 正在執行");
+    let tip_text = format!("QuietPanel Bridge v{} 正在執行", crate::protocol::VERSION);
+    copy_utf16(&mut icon.szTip, &tip_text);
     Shell_NotifyIconW(NIM_ADD, &icon);
 }
 
@@ -178,7 +179,8 @@ unsafe fn show_menu(hwnd: HWND) {
         return;
     }
 
-    let running_label = wide("QuietPanel Bridge v6.8.13-test 正在執行");
+    let running_text = format!("QuietPanel Bridge v{} 正在執行", crate::protocol::VERSION);
+    let running_label = wide(&running_text);
     AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, running_label.as_ptr());
     AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
 

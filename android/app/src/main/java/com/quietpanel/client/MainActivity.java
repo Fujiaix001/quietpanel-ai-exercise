@@ -395,7 +395,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v8.1.0", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v8.1.1", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         
         modePillButton = new TextView(this);

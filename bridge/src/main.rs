@@ -4,13 +4,14 @@ mod actions;
 #[cfg(feature = "adb")]
 mod adb;
 mod apod;
+mod bt;
 mod display;
 mod metrics;
 mod protocol;
 mod settings;
 mod tray;
 
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 #[cfg(not(feature = "adb"))]
 use std::net::UdpSocket;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
@@ -30,6 +31,66 @@ const READ_POLL: Duration = Duration::from_millis(250);
 const STATE_INTERVAL: Duration = Duration::from_secs(1);
 const PING_INTERVAL: Duration = Duration::from_secs(5);
 
+enum BridgeStream {
+    Tcp(TcpStream),
+    Bt(bt::BluetoothStream),
+}
+
+impl Read for BridgeStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            BridgeStream::Tcp(s) => s.read(buf),
+            BridgeStream::Bt(s) => s.read(buf),
+        }
+    }
+}
+
+impl Write for BridgeStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            BridgeStream::Tcp(s) => s.write(buf),
+            BridgeStream::Bt(s) => s.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            BridgeStream::Tcp(s) => s.flush(),
+            BridgeStream::Bt(s) => s.flush(),
+        }
+    }
+}
+
+impl BridgeStream {
+    fn try_clone(&self) -> io::Result<Self> {
+        match self {
+            BridgeStream::Tcp(s) => Ok(BridgeStream::Tcp(s.try_clone()?)),
+            BridgeStream::Bt(s) => Ok(BridgeStream::Bt(s.try_clone()?)),
+        }
+    }
+
+    fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
+        match self {
+            BridgeStream::Tcp(s) => s.set_read_timeout(dur),
+            BridgeStream::Bt(s) => s.set_read_timeout(dur),
+        }
+    }
+
+    fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
+        match self {
+            BridgeStream::Tcp(s) => s.set_write_timeout(dur),
+            BridgeStream::Bt(s) => s.set_write_timeout(dur),
+        }
+    }
+
+    fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
+        match self {
+            BridgeStream::Tcp(s) => s.set_nodelay(nodelay),
+            BridgeStream::Bt(_) => Ok(()),
+        }
+    }
+}
+
 fn main() {
     println!("QuietPanel Bridge v{}", protocol::VERSION);
     println!("Press Ctrl+C or close this window to stop.");
@@ -48,7 +109,7 @@ fn main() {
     #[cfg(feature = "adb")]
     println!("Mode: USB ADB (Port {PORT})");
     #[cfg(not(feature = "adb"))]
-    println!("Mode: Wi-Fi LAN (Port {PORT}, UDP Discover {UDP_BEACON_PORT})");
+    println!("Mode: Wi-Fi LAN / Bluetooth Dual Mode (Port {PORT})");
 
     while tray.is_running() {
         if let Some(changed) = tray.take_changed() {
@@ -57,7 +118,7 @@ fn main() {
         }
 
         #[cfg(feature = "adb")]
-        let (phone_ip, label) = {
+        let (stream, label, phone_ip) = {
             let serial = match adb.single_device() {
                 Ok(serial) => serial,
                 Err(error) => {
@@ -71,31 +132,34 @@ fn main() {
                 thread::sleep(RETRY_DELAY);
                 continue;
             }
-            (IpAddr::V4(Ipv4Addr::LOCALHOST), serial)
+            let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), PORT);
+            let s = match TcpStream::connect_timeout(&address, RETRY_DELAY) {
+                Ok(s) => s,
+                Err(_) => {
+                    thread::sleep(RETRY_DELAY);
+                    continue;
+                }
+            };
+            (
+                BridgeStream::Tcp(s),
+                serial,
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+            )
         };
 
         #[cfg(not(feature = "adb"))]
-        let (phone_ip, label) = {
-            match discover_phone_ip() {
-                Some(ip) => (ip, ip.to_string()),
+        let (stream, label, phone_ip) = {
+            match discover_connection() {
+                Some((stream, label, ip)) => (stream, label, ip),
                 None => {
-                    reporter.report("Searching for QuietPanel Android App on Wi-Fi (UDP 27185)...");
+                    reporter.report("搜尋 QuietPanel Android 裝置中 (Wi-Fi / 藍牙)...");
                     thread::sleep(RETRY_DELAY);
                     continue;
                 }
             }
         };
 
-        reporter.report(&format!("Connecting to Android App ({label})"));
-        let address = SocketAddr::new(phone_ip, PORT);
-        let stream = match TcpStream::connect_timeout(&address, RETRY_DELAY) {
-            Ok(stream) => stream,
-            Err(_) => {
-                thread::sleep(RETRY_DELAY);
-                continue;
-            }
-        };
-
+        reporter.report(&format!("已連接至 QuietPanel 裝置 ({label})"));
         let _ = run_session(
             stream,
             &mut reporter,
@@ -104,9 +168,29 @@ fn main() {
             &tray,
             &mut pages,
         );
-        reporter.report(&format!("Waiting for Android app ({label})"));
+        reporter.report(&format!("等待 QuietPanel 裝置 ({label})"));
         thread::sleep(RETRY_DELAY);
     }
+}
+
+#[cfg(not(feature = "adb"))]
+fn discover_connection() -> Option<(BridgeStream, String, IpAddr)> {
+    if let Some(ip) = discover_phone_ip() {
+        let address = SocketAddr::new(ip, PORT);
+        if let Ok(stream) = TcpStream::connect_timeout(&address, Duration::from_millis(1500)) {
+            return Some((BridgeStream::Tcp(stream), format!("Wi-Fi {ip}"), ip));
+        }
+    }
+
+    if let Some((bt_stream, device_name)) = bt::BluetoothStream::discover_and_connect() {
+        return Some((
+            BridgeStream::Bt(bt_stream),
+            format!("藍牙 {device_name}"),
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+        ));
+    }
+
+    None
 }
 
 #[cfg(not(feature = "adb"))]
@@ -119,7 +203,7 @@ fn discover_phone_ip() -> Option<IpAddr> {
 
     let socket = UdpSocket::bind(("0.0.0.0", UDP_BEACON_PORT)).ok()?;
     socket
-        .set_read_timeout(Some(Duration::from_millis(2500)))
+        .set_read_timeout(Some(Duration::from_millis(1500)))
         .ok()?;
     let mut buf = [0u8; 128];
     let (len, src_addr) = socket.recv_from(&mut buf).ok()?;
@@ -132,7 +216,7 @@ fn discover_phone_ip() -> Option<IpAddr> {
 }
 
 fn run_session(
-    mut writer: TcpStream,
+    mut writer: BridgeStream,
     reporter: &mut StatusReporter,
     phone_ip: IpAddr,
     display_monitor: &mut display::DisplayMonitor,
@@ -219,7 +303,7 @@ fn run_session(
     }
 }
 
-fn write_json(stream: &mut TcpStream, value: &Value) -> io::Result<()> {
+fn write_json(stream: &mut BridgeStream, value: &Value) -> io::Result<()> {
     serde_json::to_writer(&mut *stream, value).map_err(io::Error::other)?;
     stream.write_all(b"\n")?;
     stream.flush()

@@ -71,7 +71,10 @@ fn download() -> Result<Payload, String> {
 
     let response = agent
         .get(&request_url)
-        .set("User-Agent", "QuietPanel/6.3")
+        .set(
+            "User-Agent",
+            &format!("QuietPanel/{}", crate::protocol::VERSION),
+        )
         .call()
         .map_err(|error| format!("NASA API request failed: {error}"))?;
     let api_bytes = read_limited(response.into_reader(), METADATA_LIMIT)
@@ -91,7 +94,10 @@ fn download() -> Result<Payload, String> {
 
     let image_response = agent
         .get(image_url)
-        .set("User-Agent", "QuietPanel/6.3")
+        .set(
+            "User-Agent",
+            &format!("QuietPanel/{}", crate::protocol::VERSION),
+        )
         .call()
         .map_err(|error| format!("NASA image request failed: {error}"))?;
     let content_type = image_response

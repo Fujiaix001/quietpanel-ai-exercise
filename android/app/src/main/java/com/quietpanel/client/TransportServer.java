@@ -279,7 +279,7 @@ public final class TransportServer {
                 JSONObject acknowledgement = new JSONObject();
                 acknowledgement.put("v", 1);
                 acknowledgement.put("type", "hello_ack");
-                acknowledgement.put("version", "8.1.0");
+                acknowledgement.put("version", "8.1.1");
                 writeMessage(acknowledgement);
             } else if ("display_state".equals(type)) {
                 listener.onDisplayStateChanged(message.optBoolean("on", true));
