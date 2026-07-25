@@ -379,7 +379,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.16.2-test", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.16.3-test", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -1392,7 +1392,7 @@ public final class MainActivity extends Activity
 
     private void schedulePhotoTicker() {
         photoHandler.removeCallbacks(photoTicker);
-        if (!activityResumed || !pcDisplayOn || currentPage != PHOTO_PAGE) {
+        if (!activityResumed || !pcDisplayOn || (currentPage != PHOTO_PAGE && currentPage != WORK_PHOTO_PAGE)) {
             return;
         }
         long wallTime = System.currentTimeMillis();
@@ -1438,7 +1438,7 @@ public final class MainActivity extends Activity
     }
 
     private void resumePhotoAfterDisplayOn() {
-        if (!activityResumed || currentPage != PHOTO_PAGE) {
+        if (!activityResumed || (currentPage != PHOTO_PAGE && currentPage != WORK_PHOTO_PAGE)) {
             return;
         }
         if (photoBitmap == null) {
