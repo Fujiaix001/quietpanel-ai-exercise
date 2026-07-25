@@ -20,7 +20,7 @@ function Copy-IfDifferent {
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
 }
 
-# 1. Rust Bridge Tests & ADB Release Build (v6.8.16.4-test)
+# 1. Rust Bridge Tests & Release Build (v8.1.0 Wi-Fi + Bluetooth Dual Mode)
 Push-Location (Join-Path $projectRoot 'bridge')
 try {
     cargo fmt --all -- --check
@@ -30,9 +30,9 @@ try {
     cargo test --locked --all-features
     if ($LASTEXITCODE -ne 0) { throw 'cargo test failed' }
 
-    Write-Output "Building Rust Bridge v6.8.16.4-test (USB ADB Mode)..."
-    cargo build --release --no-default-features --features adb
-    if ($LASTEXITCODE -ne 0) { throw 'cargo build adb failed' }
+    Write-Output "Building Rust Bridge v8.1.0 (Wi-Fi + Bluetooth Dual Mode)..."
+    cargo build --release
+    if ($LASTEXITCODE -ne 0) { throw 'cargo build wifi failed' }
 } finally {
     Pop-Location
 }
@@ -40,7 +40,7 @@ try {
 # 2. Android App Build
 Push-Location (Join-Path $projectRoot 'android')
 try {
-    Write-Output "Building Android APK v6.8.16.4-test..."
+    Write-Output "Building Android APK v8.1.0..."
     & .\gradlew.bat :app:assembleRelease --no-daemon
     if ($LASTEXITCODE -ne 0) { throw 'Android build failed' }
 } finally {
@@ -50,11 +50,11 @@ try {
 # 3. Assemble Dist
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
-$adbExeTemp = Join-Path $projectRoot 'bridge\target\release\QuietPanelBridge.exe'
-Copy-IfDifferent -Source $adbExeTemp -Destination (Join-Path $dist 'QuietPanelBridge-v6.8.16.4-test-ADB.exe')
+$wifiExeTemp = Join-Path $projectRoot 'bridge\target\release\QuietPanelBridge.exe'
+Copy-IfDifferent -Source $wifiExeTemp -Destination (Join-Path $dist 'QuietPanelBridge-v8.1.0.exe')
 
 $builtApk = Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk'
-Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist 'QuietPanel-v6.8.16.4-test-ADB.apk') -Force
+Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist 'QuietPanel-v8.1.0.apk') -Force
 
 # 4. ADB Tools
 $adbPath = $env:QUIETPANEL_ADB
@@ -86,5 +86,5 @@ $hashLines = foreach ($file in $hashFiles) {
 }
 Set-Content -LiteralPath (Join-Path $dist 'SHA256SUMS.txt') -Value $hashLines -Encoding ascii
 
-Write-Output "Successfully built QuietPanel v6.8.16.4-test (USB ADB Mode)!"
+Write-Output "Successfully built QuietPanel v8.1.0 (Wi-Fi + Bluetooth Dual Mode)!"
 Get-ChildItem -LiteralPath $dist -File | Select-Object Name, Length, LastWriteTime

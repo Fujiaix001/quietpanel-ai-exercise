@@ -75,6 +75,7 @@ public final class MainActivity extends Activity
     private final DiskRow[] diskRows = new DiskRow[4];
     private TransportServer transport;
     private ApodServer apodServer;
+    private TextView modePillButton;
     private LinearLayout appRoot;
     private LinearLayout appHeader;
     private SwipePager pager;
@@ -209,6 +210,17 @@ public final class MainActivity extends Activity
         }
     };
 
+    private void updateModePillText(int mode) {
+        if (modePillButton == null) return;
+        if (mode == TransportServer.MODE_AUTO) {
+            modePillButton.setText("AUTO");
+        } else if (mode == TransportServer.MODE_WIFI) {
+            modePillButton.setText("WiFi");
+        } else if (mode == TransportServer.MODE_BT) {
+            modePillButton.setText("BT");
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -217,12 +229,15 @@ public final class MainActivity extends Activity
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
+        int savedMode = getSharedPreferences("quietpanel_prefs", MODE_PRIVATE).getInt("transport_mode", TransportServer.MODE_AUTO);
         setContentView(buildInterface());
         setActionButtonsEnabled(false);
         loadApodCache();
 
         transport = new TransportServer(this);
+        transport.setMode(savedMode);
         transport.start();
+        updateModePillText(savedMode);
         apodServer = new ApodServer(this);
         apodServer.start();
     }
@@ -380,11 +395,43 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.16.4-test", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v8.1.0", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        
+        modePillButton = new TextView(this);
+        modePillButton.setGravity(Gravity.CENTER);
+        modePillButton.setTextSize(12);
+        modePillButton.setTextColor(Color.WHITE);
+        StateListDrawable pillBg = new StateListDrawable();
+        pillBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(190, 40, 60, 80)));
+        pillBg.addState(new int[] {}, rounded(Color.argb(125, 20, 30, 45)));
+        modePillButton.setBackground(pillBg);
+        modePillButton.setPadding(dp(8), dp(4), dp(8), dp(4));
+        modePillButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (transport == null) return;
+                int nextMode = (transport.getMode() + 1) % 3;
+                getSharedPreferences("quietpanel_prefs", MODE_PRIVATE).edit().putInt("transport_mode", nextMode).apply();
+                transport.setMode(nextMode);
+                updateModePillText(nextMode);
+            }
+        });
+
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
-        appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
-        appHeader.addView(connectionText, new LinearLayout.LayoutParams(0, dp(54), 1));
+        
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, dp(54), 1.0f);
+        titleParams.gravity = Gravity.CENTER_VERTICAL;
+        appHeader.addView(title, titleParams);
+        
+        LinearLayout.LayoutParams pillParams = new LinearLayout.LayoutParams(dp(70), dp(32));
+        pillParams.rightMargin = dp(12);
+        pillParams.gravity = Gravity.CENTER_VERTICAL;
+        appHeader.addView(modePillButton, pillParams);
+
+        LinearLayout.LayoutParams connParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(54));
+        connParams.gravity = Gravity.CENTER_VERTICAL;
+        appHeader.addView(connectionText, connParams);
         appRoot.addView(appHeader, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
 
