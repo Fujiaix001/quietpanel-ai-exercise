@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde_json::{json, Value};
 
-pub const PAGE_COUNT: usize = 6;
+pub const PAGE_COUNT: usize = 7;
 pub const DEFAULT_PAGES: [bool; PAGE_COUNT] = [true; PAGE_COUNT];
 
 pub fn load_pages() -> [bool; PAGE_COUNT] {
@@ -68,7 +68,7 @@ mod tests {
     fn parses_enabled_page_indices() {
         assert_eq!(
             parse_pages(r#"{"enabledPages":[0,2,5]}"#),
-            Some([true, false, true, false, false, true])
+            Some([true, false, true, false, false, true, false])
         );
     }
 

@@ -19,6 +19,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -55,7 +56,8 @@ public final class MainActivity extends Activity
     private static final int SYSTEM_PAGE = 0;
     private static final int STORAGE_PAGE = 1;
     private static final int PHOTO_PAGE = 2;
-    private static final int PAGE_COUNT = 6;
+    private static final int WORK_PHOTO_PAGE = 3;
+    private static final int PAGE_COUNT = 7;
     private static final int DEFAULT_PHOTO_INTERVAL_SECONDS = 45;
     private static final int MIN_PHOTO_INTERVAL_SECONDS = 10;
     private static final int MAX_PHOTO_INTERVAL_SECONDS = 300;
@@ -100,7 +102,12 @@ public final class MainActivity extends Activity
     private TextView photoDate;
     private Button photoSettingsButton;
     private LinearLayout clockPanel;
+    private FrameLayout photoContentContainer;
     private FrameLayout photoPage;
+    private FrameLayout workPhotoPage;
+    private LinearLayout workButtonsContainer;
+    private Button workScreenshotButton;
+    private Button workPasteButton;
     private Bitmap photoBitmap;
     private Bitmap pendingPhotoBitmap;
     private Bitmap softBackgroundBitmap;
@@ -161,12 +168,12 @@ public final class MainActivity extends Activity
     private long highCpuStartedAt = -1;
     private boolean cpuWarning;
     private boolean diskWarning;
-    private final boolean[] pageEnabled = { true, true, true, true, true, true };
+    private final boolean[] pageEnabled = { true, true, true, true, true, true, true };
 
     private final Runnable photoTicker = new Runnable() {
         @Override
         public void run() {
-            if (!activityResumed || !pcDisplayOn || currentPage != PHOTO_PAGE) {
+            if (!activityResumed || !pcDisplayOn || (currentPage != PHOTO_PAGE && currentPage != WORK_PHOTO_PAGE)) {
                 return;
             }
             updatePhotoClock();
@@ -181,7 +188,7 @@ public final class MainActivity extends Activity
     private final Runnable photoPanTicker = new Runnable() {
         @Override
         public void run() {
-            if (!activityResumed || !pcDisplayOn || currentPage != PHOTO_PAGE || photoBitmap == null) {
+            if (!activityResumed || !pcDisplayOn || (currentPage != PHOTO_PAGE && currentPage != WORK_PHOTO_PAGE) || photoBitmap == null) {
                 return;
             }
             long elapsed = SystemClock.elapsedRealtime() - photoPanStartedAt;
@@ -223,7 +230,7 @@ public final class MainActivity extends Activity
         super.onResume();
         activityResumed = true;
         applyPhotoSettings();
-        if (pcDisplayOn && currentPage == PHOTO_PAGE) {
+        if (pcDisplayOn && (currentPage == PHOTO_PAGE || currentPage == WORK_PHOTO_PAGE)) {
             hidePhotoFolderButtonImmediately();
             startPhotoSlideshow();
         }
@@ -371,7 +378,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.13-test", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.16-test", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -383,6 +390,7 @@ public final class MainActivity extends Activity
         pager.addView(buildSystemPage());
         pager.addView(buildStoragePage());
         pager.addView(buildPhotoPage());
+        pager.addView(buildWorkPhotoPage());
         pager.addView(buildApodPage());
         pager.addView(buildMacroPage());
         pager.addView(buildToolPage());
@@ -453,20 +461,23 @@ public final class MainActivity extends Activity
     }
 
     private View buildPhotoPage() {
-        final FrameLayout page = new FrameLayout(this);
-        photoPage = page;
-        page.setBackgroundColor(Color.BLACK);
-        page.setClickable(true);
-        page.setOnClickListener(new View.OnClickListener() {
+        photoPage = new FrameLayout(this);
+        photoPage.setBackgroundColor(Color.BLACK);
+
+        photoContentContainer = new FrameLayout(this);
+        photoContentContainer.setClickable(true);
+        photoContentContainer.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                showPhotoSettingsButton();
+                if (currentPage == PHOTO_PAGE) {
+                    showPhotoSettingsButton();
+                }
             }
         });
 
         photoImage = new ImageView(this);
         photoImage.setScaleType(ImageView.ScaleType.MATRIX);
-        page.addView(photoImage, new FrameLayout.LayoutParams(
+        photoContentContainer.addView(photoImage, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -478,7 +489,7 @@ public final class MainActivity extends Activity
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER);
-        page.addView(photoStatus, statusParams);
+        photoContentContainer.addView(photoStatus, statusParams);
 
         clockPanel = new LinearLayout(this);
         clockPanel.setOrientation(LinearLayout.VERTICAL);
@@ -505,8 +516,8 @@ public final class MainActivity extends Activity
                     @Override
                     public void onScaleEnd(ScaleGestureDetector detector) {
                         saveClockTextScale();
-                        if (photoPage != null) {
-                            photoPage.post(new Runnable() {
+                        if (photoContentContainer != null) {
+                            photoContentContainer.post(new Runnable() {
                                 @Override
                                 public void run() {
                                     moveClockPanel(clockPanel.getLeft(), clockPanel.getTop());
@@ -570,7 +581,7 @@ public final class MainActivity extends Activity
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.LEFT);
-        page.addView(clockPanel, clockParams);
+        photoContentContainer.addView(clockPanel, clockParams);
         View.OnLayoutChangeListener clockBoundsListener = new View.OnLayoutChangeListener() {
             @Override
             public void onLayoutChange(View view, int left, int top, int right, int bottom,
@@ -578,15 +589,8 @@ public final class MainActivity extends Activity
                 ensureClockInsidePage();
             }
         };
-        page.addOnLayoutChangeListener(clockBoundsListener);
+        photoContentContainer.addOnLayoutChangeListener(clockBoundsListener);
         clockPanel.addOnLayoutChangeListener(clockBoundsListener);
-        page.post(new Runnable() {
-            @Override
-            public void run() {
-                applyClockPosition();
-                applyPhotoSettings();
-            }
-        });
 
         photoSettingsButton = new Button(this);
         photoSettingsButton.setText("設定");
@@ -613,10 +617,83 @@ public final class MainActivity extends Activity
         FrameLayout.LayoutParams folderButtonParams = new FrameLayout.LayoutParams(
                 dp(150), dp(48), Gravity.TOP | Gravity.LEFT);
         folderButtonParams.setMargins(dp(12), dp(12), 0, 0);
-        page.addView(photoSettingsButton, folderButtonParams);
+        photoContentContainer.addView(photoSettingsButton, folderButtonParams);
+
+        workButtonsContainer = new LinearLayout(this);
+        workButtonsContainer.setOrientation(LinearLayout.VERTICAL);
+        workButtonsContainer.setVisibility(View.GONE);
+
+        workScreenshotButton = new Button(this);
+        workScreenshotButton.setText("CAPTURE");
+        workScreenshotButton.setTextColor(Color.WHITE);
+        workScreenshotButton.setTextSize(16);
+        workScreenshotButton.setGravity(Gravity.CENTER);
+        workScreenshotButton.setAllCaps(false);
+        workScreenshotButton.setTypeface(PhotoFontManager.get(this, clockFontStyle));
+        StateListDrawable screenshotBg = new StateListDrawable();
+        screenshotBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(190, 30, 42, 56)));
+        screenshotBg.addState(new int[] {}, rounded(Color.argb(125, 12, 18, 26)));
+        workScreenshotButton.setBackground(screenshotBg);
+        workScreenshotButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                sendActionString("screenshot_all", "CAPTURE");
+            }
+        });
+
+        workPasteButton = new Button(this);
+        workPasteButton.setText("PASTE");
+        workPasteButton.setTextColor(Color.WHITE);
+        workPasteButton.setTextSize(16);
+        workPasteButton.setGravity(Gravity.CENTER);
+        workPasteButton.setAllCaps(false);
+        workPasteButton.setTypeface(PhotoFontManager.get(this, clockFontStyle));
+        StateListDrawable pasteBg = new StateListDrawable();
+        pasteBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(190, 30, 42, 56)));
+        pasteBg.addState(new int[] {}, rounded(Color.argb(125, 12, 18, 26)));
+        workPasteButton.setBackground(pasteBg);
+        workPasteButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                sendActionString("paste", "PASTE");
+            }
+        });
+
+        LinearLayout.LayoutParams btn1Params = new LinearLayout.LayoutParams(dp(140), dp(96));
+        btn1Params.bottomMargin = dp(10);
+        LinearLayout.LayoutParams btn2Params = new LinearLayout.LayoutParams(dp(140), dp(96));
+        workButtonsContainer.addView(workScreenshotButton, btn1Params);
+        workButtonsContainer.addView(workPasteButton, btn2Params);
+
+        FrameLayout.LayoutParams workContainerParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.LEFT);
+        workContainerParams.leftMargin = dp(16);
+        workContainerParams.bottomMargin = dp(16);
+        photoContentContainer.addView(workButtonsContainer, workContainerParams);
+
+        photoPage.addView(photoContentContainer, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+
+        photoPage.post(new Runnable() {
+            @Override
+            public void run() {
+                applyClockPosition();
+                applyPhotoSettings();
+            }
+        });
+
         updatePhotoClock();
         applyPhotoSettings();
-        return page;
+        return photoPage;
+    }
+
+    private View buildWorkPhotoPage() {
+        workPhotoPage = new FrameLayout(this);
+        workPhotoPage.setBackgroundColor(Color.BLACK);
+        return workPhotoPage;
     }
 
     private View buildApodPage() {
@@ -775,11 +852,15 @@ public final class MainActivity extends Activity
     }
 
     private void sendAction(MacroSpec macro) {
-        long id = transport == null ? -1 : transport.sendAction(macro.action);
+        sendActionString(macro.action, macro.label.replace("\n（長按）", ""));
+    }
+
+    private void sendActionString(String actionName, String labelName) {
+        long id = transport == null ? -1 : transport.sendAction(actionName);
         if (id < 0) {
             setActionStatus("尚未連線，指令未送出", Color.rgb(239, 108, 108));
         } else {
-            setActionStatus("已送出  " + macro.label.replace("\n（長按）", ""), SECONDARY);
+            setActionStatus("已送出  " + labelName, SECONDARY);
         }
     }
 
@@ -897,9 +978,11 @@ public final class MainActivity extends Activity
         if (requestedPage < 0 || requestedPage >= PAGE_COUNT || !pageEnabled[requestedPage]) {
             requestedPage = firstEnabledPage();
         }
-        if (currentPage == PHOTO_PAGE) {
-            stopPhotoSlideshow();
-            hidePhotoFolderButtonImmediately();
+        if (currentPage == PHOTO_PAGE || currentPage == WORK_PHOTO_PAGE) {
+            if (requestedPage != PHOTO_PAGE && requestedPage != WORK_PHOTO_PAGE) {
+                stopPhotoSlideshow();
+                hidePhotoFolderButtonImmediately();
+            }
         }
         currentPage = requestedPage;
         pager.setDisplayedChild(currentPage);
@@ -909,16 +992,31 @@ public final class MainActivity extends Activity
         } else if (currentPage == STORAGE_PAGE) {
             renderDisks();
         }
-        boolean photoFullScreen = currentPage == PHOTO_PAGE;
+        boolean photoFullScreen = (currentPage == PHOTO_PAGE || currentPage == WORK_PHOTO_PAGE);
         appHeader.setVisibility(photoFullScreen ? View.GONE : View.VISIBLE);
         pageIndicator.setVisibility(photoFullScreen ? View.GONE : View.VISIBLE);
         if (photoFullScreen) {
             appRoot.setPadding(0, 0, 0, 0);
+            FrameLayout targetContainer = (currentPage == WORK_PHOTO_PAGE) ? workPhotoPage : photoPage;
+            if (photoContentContainer != null && targetContainer != null && photoContentContainer.getParent() != targetContainer) {
+                if (photoContentContainer.getParent() != null) {
+                    ((ViewGroup) photoContentContainer.getParent()).removeView(photoContentContainer);
+                }
+                targetContainer.addView(photoContentContainer, 0, new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+            }
+            if (workButtonsContainer != null) {
+                workButtonsContainer.setVisibility(currentPage == WORK_PHOTO_PAGE ? View.VISIBLE : View.GONE);
+            }
+            if (currentPage != PHOTO_PAGE) {
+                hidePhotoFolderButtonImmediately();
+            }
+            if (activityResumed && pcDisplayOn) {
+                startPhotoSlideshow();
+            }
         } else {
             appRoot.setPadding(dp(12), dp(8), dp(12), dp(6));
-        }
-        if (currentPage == PHOTO_PAGE && activityResumed && pcDisplayOn) {
-            startPhotoSlideshow();
         }
         updatePageIndicator();
     }
@@ -957,11 +1055,11 @@ public final class MainActivity extends Activity
     }
 
     private void moveClockPanel(int left, int top) {
-        if (photoPage == null || clockPanel == null) {
+        if (photoContentContainer == null || clockPanel == null) {
             return;
         }
-        int maxLeft = Math.max(0, photoPage.getWidth() - clockPanel.getWidth());
-        int maxTop = Math.max(0, photoPage.getHeight() - clockPanel.getHeight());
+        int maxLeft = Math.max(0, photoContentContainer.getWidth() - clockPanel.getWidth());
+        int maxTop = Math.max(0, photoContentContainer.getHeight() - clockPanel.getHeight());
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) clockPanel.getLayoutParams();
         int clampedLeft = Math.max(0, Math.min(left, maxLeft));
         int clampedTop = Math.max(0, Math.min(top, maxTop));
@@ -974,14 +1072,14 @@ public final class MainActivity extends Activity
     }
 
     private void applyClockPosition() {
-        if (photoPage == null || clockPanel == null
-                || photoPage.getWidth() <= 0 || photoPage.getHeight() <= 0) {
+        if (photoContentContainer == null || clockPanel == null
+                || photoContentContainer.getWidth() <= 0 || photoContentContainer.getHeight() <= 0) {
             return;
         }
         android.content.SharedPreferences preferences = getSharedPreferences(
                 PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
-        int maxLeft = Math.max(0, photoPage.getWidth() - clockPanel.getWidth());
-        int maxTop = Math.max(0, photoPage.getHeight() - clockPanel.getHeight());
+        int maxLeft = Math.max(0, photoContentContainer.getWidth() - clockPanel.getWidth());
+        int maxTop = Math.max(0, photoContentContainer.getHeight() - clockPanel.getHeight());
         float xRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_X_RATIO, 1.0f);
         float yRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_Y_RATIO, 1.0f);
         boolean positionCustomized = preferences.getBoolean(
@@ -995,11 +1093,11 @@ public final class MainActivity extends Activity
     }
 
     private void saveClockPosition() {
-        if (photoPage == null || clockPanel == null) {
+        if (photoContentContainer == null || clockPanel == null) {
             return;
         }
-        int maxLeft = Math.max(1, photoPage.getWidth() - clockPanel.getWidth());
-        int maxTop = Math.max(1, photoPage.getHeight() - clockPanel.getHeight());
+        int maxLeft = Math.max(1, photoContentContainer.getWidth() - clockPanel.getWidth());
+        int maxTop = Math.max(1, photoContentContainer.getHeight() - clockPanel.getHeight());
         getSharedPreferences(PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
                 .edit()
                 .putFloat(PhotoFolderActivity.CLOCK_X_RATIO,
@@ -1060,6 +1158,12 @@ public final class MainActivity extends Activity
         if (photoDate != null) {
             photoDate.setTypeface(typeface);
         }
+        if (workScreenshotButton != null) {
+            workScreenshotButton.setTypeface(typeface);
+        }
+        if (workPasteButton != null) {
+            workPasteButton.setTypeface(typeface);
+        }
         updatePhotoClock();
     }
 
@@ -1093,14 +1197,14 @@ public final class MainActivity extends Activity
     }
 
     private void applySoftBackground(Bitmap bitmap) {
-        if (!softBackgroundEnabled || photoPage == null || bitmap == null) {
+        if (!softBackgroundEnabled || photoContentContainer == null || bitmap == null) {
             return;
         }
         if (photoBackgroundImage == null) {
             photoBackgroundImage = new ImageView(this);
             photoBackgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
             photoBackgroundImage.setAlpha(0.72f);
-            photoPage.addView(photoBackgroundImage, 0, new FrameLayout.LayoutParams(
+            photoContentContainer.addView(photoBackgroundImage, 0, new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT));
         }
@@ -1117,8 +1221,8 @@ public final class MainActivity extends Activity
         releaseSoftBackgroundBitmap();
         if (photoBackgroundImage != null) {
             photoBackgroundImage.setImageDrawable(null);
-            if (photoPage != null) {
-                photoPage.removeView(photoBackgroundImage);
+            if (photoContentContainer != null) {
+                photoContentContainer.removeView(photoBackgroundImage);
             }
             photoBackgroundImage = null;
         }
@@ -1156,14 +1260,14 @@ public final class MainActivity extends Activity
     }
 
     private void ensureClockInsidePage() {
-        if (photoPage == null || clockPanel == null
-                || photoPage.getWidth() <= 0 || photoPage.getHeight() <= 0
+        if (photoContentContainer == null || clockPanel == null
+                || photoContentContainer.getWidth() <= 0 || photoContentContainer.getHeight() <= 0
                 || clockPanel.getWidth() <= 0 || clockPanel.getHeight() <= 0) {
             return;
         }
         int margin = dp(12);
-        int availableWidth = Math.max(1, photoPage.getWidth() - margin * 2);
-        int availableHeight = Math.max(1, photoPage.getHeight() - margin * 2);
+        int availableWidth = Math.max(1, photoContentContainer.getWidth() - margin * 2);
+        int availableHeight = Math.max(1, photoContentContainer.getHeight() - margin * 2);
         float requestedRatio = clockTextScale / Math.max(0.1f, effectiveClockTextScale);
         int horizontalPadding = clockPanel.getPaddingLeft() + clockPanel.getPaddingRight();
         int verticalPadding = clockPanel.getPaddingTop() + clockPanel.getPaddingBottom();
@@ -1247,7 +1351,7 @@ public final class MainActivity extends Activity
     }
 
     private void updatePageIndicator() {
-        String[] labels = { "系統", "儲存", "相簿", "NASA", "MACRO", "快捷" };
+        String[] labels = { "系統", "儲存", "相簿", "工作", "NASA", "MACRO", "快捷" };
         StringBuilder dots = new StringBuilder();
         boolean first = true;
         for (int i = 0; i < labels.length; i++) {
@@ -1571,7 +1675,7 @@ public final class MainActivity extends Activity
                     @Override
                     public void run() {
                         if (generation != photoGeneration
-                                || currentPage != PHOTO_PAGE
+                                || (currentPage != PHOTO_PAGE && currentPage != WORK_PHOTO_PAGE)
                                 || !activityResumed) {
                             if (bitmap != null && !bitmap.isRecycled()) {
                                 bitmap.recycle();
@@ -1693,7 +1797,9 @@ public final class MainActivity extends Activity
     }
 
     private boolean completePhotoSwap(Bitmap bitmap, int generation) {
-        if (generation != photoGeneration || currentPage != PHOTO_PAGE || !activityResumed) {
+        if (generation != photoGeneration
+                || (currentPage != PHOTO_PAGE && currentPage != WORK_PHOTO_PAGE)
+                || !activityResumed) {
             if (pendingPhotoBitmap == bitmap) {
                 pendingPhotoBitmap = null;
             }

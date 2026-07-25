@@ -26,9 +26,10 @@ const PAGE_LABELS: [&str; PAGE_COUNT] = [
     "頁面 1：系統監控",
     "頁面 2：磁碟空間",
     "頁面 3：相簿時鐘",
-    "頁面 4：NASA APOD",
-    "頁面 5：MACRO",
-    "頁面 6：快捷工具",
+    "頁面 4：工作相簿",
+    "頁面 5：NASA APOD",
+    "頁面 6：MACRO",
+    "頁面 7：快捷工具",
 ];
 
 struct TrayShared {
@@ -269,16 +270,16 @@ mod tests {
     #[test]
     fn page_toggle_keeps_at_least_one_page() {
         assert_eq!(
-            toggle_for_test([true, false, false, false, false, false], 0),
-            [true, false, false, false, false, false]
+            toggle_for_test([true, false, false, false, false, false, false], 0),
+            [true, false, false, false, false, false, false]
         );
     }
 
     #[test]
     fn page_toggle_can_disable_one_of_many_pages() {
         assert_eq!(
-            toggle_for_test([true, true, false, false, false, false], 0),
-            [false, true, false, false, false, false]
+            toggle_for_test([true, true, false, false, false, false, false], 0),
+            [false, true, false, false, false, false, false]
         );
     }
 }

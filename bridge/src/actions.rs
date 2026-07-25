@@ -4,13 +4,11 @@ use std::time::Duration;
 
 use windows_sys::Win32::System::Shutdown::LockWorkStation;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    keybd_event, KEYEVENTF_KEYUP, VK_CONTROL, VK_LWIN, VK_MEDIA_PLAY_PAUSE, VK_MENU, VK_SNAPSHOT,
-    VK_TAB, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
+    keybd_event, KEYEVENTF_KEYUP, VK_CONTROL, VK_LWIN, VK_MEDIA_PLAY_PAUSE, VK_MENU, VK_RIGHT,
+    VK_SHIFT, VK_SNAPSHOT, VK_TAB, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
 };
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, ShowWindow, SW_MINIMIZE, SW_SHOWNORMAL,
-};
+use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, ShowWindow, SW_MINIMIZE};
 
 const VK_C: u16 = 0x43;
 const VK_D: u16 = 0x44;
@@ -160,28 +158,35 @@ fn hotkey(modifier: u16, key: u16) {
     }
 }
 
+fn hotkey_three(mod1: u16, mod2: u16, key: u16) {
+    unsafe {
+        keybd_event(mod1 as u8, 0, 0, 0);
+        thread::sleep(Duration::from_millis(30));
+        keybd_event(mod2 as u8, 0, 0, 0);
+        thread::sleep(Duration::from_millis(30));
+        keybd_event(key as u8, 0, 0, 0);
+        thread::sleep(Duration::from_millis(30));
+        keybd_event(key as u8, 0, KEYEVENTF_KEYUP, 0);
+        keybd_event(mod2 as u8, 0, KEYEVENTF_KEYUP, 0);
+        keybd_event(mod1 as u8, 0, KEYEVENTF_KEYUP, 0);
+    }
+}
+
 fn open_youtube() -> ActionOutcome {
-    let url: Vec<u16> = "https://www.youtube.com"
+    let cmd: Vec<u16> = "cmd.exe".encode_utf16().chain(std::iter::once(0)).collect();
+    let args: Vec<u16> = "/c start chrome --new-window \"https://www.youtube.com\" || start msedge --new-window \"https://www.youtube.com\" || start https://www.youtube.com"
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();
 
-    let result = unsafe {
-        ShellExecuteW(
-            null_mut(),
-            null(),
-            url.as_ptr(),
-            null(),
-            null(),
-            SW_SHOWNORMAL,
-        )
-    };
-
-    if result as usize > 32 {
-        ActionOutcome::success("已開啟 YouTube")
-    } else {
-        ActionOutcome::failure("無法開啟 YouTube")
+    unsafe {
+        ShellExecuteW(null_mut(), null(), cmd.as_ptr(), args.as_ptr(), null(), 0);
     }
+
+    thread::sleep(Duration::from_millis(400));
+    hotkey_three(VK_LWIN, VK_SHIFT, VK_RIGHT);
+
+    ActionOutcome::success("YouTube 已於第二螢幕開啟")
 }
 
 #[cfg(test)]

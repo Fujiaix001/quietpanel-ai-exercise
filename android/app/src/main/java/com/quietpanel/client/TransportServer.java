@@ -96,7 +96,7 @@ public final class TransportServer {
                 serverSocket = server;
             }
 
-            notifyConnection(false, "等待電腦連線 (Wi-Fi)");
+            notifyConnection(false, "等待電腦連線 (USB ADB)");
 
             while (running) {
                 Socket socket = server.accept();
@@ -171,7 +171,7 @@ public final class TransportServer {
                 JSONObject acknowledgement = new JSONObject();
                 acknowledgement.put("v", 1);
                 acknowledgement.put("type", "hello_ack");
-                acknowledgement.put("version", "6.8.13-test");
+                acknowledgement.put("version", "6.8.16-test");
                 writeMessage(acknowledgement);
             } else if ("display_state".equals(type)) {
                 listener.onDisplayStateChanged(message.optBoolean("on", true));
