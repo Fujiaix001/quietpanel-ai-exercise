@@ -108,6 +108,7 @@ public final class MainActivity extends Activity
     private LinearLayout workButtonsContainer;
     private Button workScreenshotButton;
     private Button workPasteButton;
+    private Button workYouTubeButton;
     private Bitmap photoBitmap;
     private Bitmap pendingPhotoBitmap;
     private Bitmap softBackgroundBitmap;
@@ -379,7 +380,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v6.8.16.3-test", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v6.8.16.4-test", 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
@@ -625,6 +626,24 @@ public final class MainActivity extends Activity
         workButtonsContainer.setOrientation(LinearLayout.VERTICAL);
         workButtonsContainer.setVisibility(View.GONE);
 
+        workYouTubeButton = new Button(this);
+        workYouTubeButton.setText("YOUTUBE");
+        workYouTubeButton.setTextColor(Color.WHITE);
+        workYouTubeButton.setTextSize(16);
+        workYouTubeButton.setGravity(Gravity.CENTER);
+        workYouTubeButton.setAllCaps(false);
+        workYouTubeButton.setTypeface(PhotoFontManager.get(this, clockFontStyle));
+        StateListDrawable ytBg = new StateListDrawable();
+        ytBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(190, 30, 42, 56)));
+        ytBg.addState(new int[] {}, rounded(Color.argb(125, 12, 18, 26)));
+        workYouTubeButton.setBackground(ytBg);
+        workYouTubeButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                sendActionString("open_youtube", "YOUTUBE");
+            }
+        });
+
         workScreenshotButton = new Button(this);
         workScreenshotButton.setText("CAPTURE");
         workScreenshotButton.setTextColor(Color.WHITE);
@@ -661,9 +680,12 @@ public final class MainActivity extends Activity
             }
         });
 
-        LinearLayout.LayoutParams btn1Params = new LinearLayout.LayoutParams(dp(140), dp(96));
-        btn1Params.bottomMargin = dp(10);
-        LinearLayout.LayoutParams btn2Params = new LinearLayout.LayoutParams(dp(140), dp(96));
+        LinearLayout.LayoutParams btnYtParams = new LinearLayout.LayoutParams(dp(140), dp(72));
+        btnYtParams.bottomMargin = dp(8);
+        LinearLayout.LayoutParams btn1Params = new LinearLayout.LayoutParams(dp(140), dp(72));
+        btn1Params.bottomMargin = dp(8);
+        LinearLayout.LayoutParams btn2Params = new LinearLayout.LayoutParams(dp(140), dp(72));
+        workButtonsContainer.addView(workYouTubeButton, btnYtParams);
         workButtonsContainer.addView(workScreenshotButton, btn1Params);
         workButtonsContainer.addView(workPasteButton, btn2Params);
 
