@@ -194,7 +194,11 @@ public final class TransportServer {
                 }
 
                 synchronized (this) {
-                    btServerSocket = adapter.listenUsingRfcommWithServiceRecord("QuietPanel", SPP_UUID);
+                    try {
+                        btServerSocket = adapter.listenUsingInsecureRfcommWithServiceRecord("QuietPanel", SPP_UUID);
+                    } catch (Exception e) {
+                        btServerSocket = adapter.listenUsingRfcommWithServiceRecord("QuietPanel", SPP_UUID);
+                    }
                 }
                 notifyConnection(false, "等待藍牙連線 (SPP)…");
 

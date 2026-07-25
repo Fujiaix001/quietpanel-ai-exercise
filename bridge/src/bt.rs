@@ -2,19 +2,38 @@ use std::io::{self, Read, Write};
 use std::time::Duration;
 use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::Networking::WinSock::{
-    closesocket, connect, recv, send, setsockopt, socket, WSAStartup, SOCKET, SOCKET_ERROR,
-    SOCK_STREAM, SOL_SOCKET, SO_RCVTIMEO, SO_SNDTIMEO, WSADATA,
+    closesocket, connect, recv, send, setsockopt, socket, WSALookupServiceBeginW,
+    WSALookupServiceEnd, WSALookupServiceNextW, WSAStartup, LUP_FLUSHPREVIOUS, LUP_RETURN_ADDR,
+    LUP_RETURN_NAME, SOCKET, SOCKET_ERROR, SOCK_STREAM, SOL_SOCKET, SO_RCVTIMEO, SO_SNDTIMEO,
+    WSADATA, WSAQUERYSETW,
 };
 
 pub const AF_BTH: u16 = 32;
 pub const BTHPROTO_RFCOMM: u32 = 3;
+pub const NS_BTH: u32 = 4;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct GUID {
+    pub data1: u32,
+    pub data2: u16,
+    pub data3: u16,
+    pub data4: [u8; 8],
+}
+
+pub const SPP_GUID: GUID = GUID {
+    data1: 0x00001101,
+    data2: 0x0000,
+    data3: 0x1000,
+    data4: [0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB],
+};
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct SOCKADDR_BTH {
     pub address_family: u16,
     pub bt_addr: u64,
-    pub service_class_id: [u8; 16],
+    pub service_class_id: GUID,
     pub port: u32,
 }
 
@@ -62,6 +81,37 @@ pub struct BluetoothStream {
 unsafe impl Send for BluetoothStream {}
 unsafe impl Sync for BluetoothStream {}
 
+pub fn query_bluetooth_sdp(mac_addr: u64) {
+    unsafe {
+        let mut wsa_data: WSADATA = std::mem::zeroed();
+        if WSAStartup(0x0202, &mut wsa_data) != 0 {
+            return;
+        }
+
+        let mac_str = format!("{:012X}\0", mac_addr);
+        let mut wide_mac: Vec<u16> = mac_str.encode_utf16().collect();
+
+        let mut qs: WSAQUERYSETW = std::mem::zeroed();
+        qs.dwSize = std::mem::size_of::<WSAQUERYSETW>() as u32;
+        qs.dwNameSpace = NS_BTH;
+        qs.lpszContext = wide_mac.as_mut_ptr();
+
+        let mut spp_guid = SPP_GUID;
+        qs.lpServiceClassId = &mut spp_guid as *mut _ as *mut _;
+
+        let mut handle: HANDLE = std::ptr::null_mut();
+        let flags = LUP_FLUSHPREVIOUS | LUP_RETURN_NAME | LUP_RETURN_ADDR;
+
+        if WSALookupServiceBeginW(&qs, flags, &mut handle) == 0 {
+            let mut buffer = [0u8; 1024];
+            let mut length = buffer.len() as u32;
+            let result_qs = buffer.as_mut_ptr() as *mut WSAQUERYSETW;
+            let _ = WSALookupServiceNextW(handle, flags, &mut length, result_qs);
+            WSALookupServiceEnd(handle);
+        }
+    }
+}
+
 impl BluetoothStream {
     pub fn discover_and_connect() -> Option<(Self, String)> {
         let devices = discover_paired_devices();
@@ -69,7 +119,7 @@ impl BluetoothStream {
             return None;
         }
 
-        for (addr, name) in devices {
+        for (addr, name, _connected) in devices {
             if let Ok(stream) = Self::connect_spp(addr) {
                 return Some((stream, name));
             }
@@ -79,6 +129,7 @@ impl BluetoothStream {
     }
 
     pub fn connect_spp(mac_addr: u64) -> io::Result<Self> {
+        query_bluetooth_sdp(mac_addr);
         unsafe {
             let mut wsa_data: WSADATA = std::mem::zeroed();
             let res = WSAStartup(0x0202, &mut wsa_data);
@@ -94,24 +145,36 @@ impl BluetoothStream {
                 return Err(io::Error::last_os_error());
             }
 
-            // SPP UUID: 00001101-0000-1000-8000-00805F9B34FB
-            let spp_guid: [u8; 16] = [
-                0x01, 0x11, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B,
-                0x34, 0xFB,
-            ];
-
-            let addr = SOCKADDR_BTH {
+            // 1. Try with SPP GUID (SDP lookup)
+            let mut addr = SOCKADDR_BTH {
                 address_family: AF_BTH,
                 bt_addr: mac_addr,
-                service_class_id: spp_guid,
+                service_class_id: SPP_GUID,
                 port: 0,
             };
 
-            let connect_res = connect(
+            let mut connect_res = connect(
                 s,
                 &addr as *const _ as *const _,
                 std::mem::size_of::<SOCKADDR_BTH>() as i32,
             );
+
+            // 2. If SDP lookup failed, try direct RFCOMM channel ports 1..5 with zero GUID
+            if connect_res == SOCKET_ERROR {
+                let zero_guid: GUID = std::mem::zeroed();
+                for channel in 1..=5 {
+                    addr.service_class_id = zero_guid;
+                    addr.port = channel;
+                    connect_res = connect(
+                        s,
+                        &addr as *const _ as *const _,
+                        std::mem::size_of::<SOCKADDR_BTH>() as i32,
+                    );
+                    if connect_res == 0 {
+                        break;
+                    }
+                }
+            }
 
             if connect_res == SOCKET_ERROR {
                 let err = io::Error::last_os_error();
@@ -190,7 +253,7 @@ impl Write for BluetoothStream {
     }
 }
 
-pub fn discover_paired_devices() -> Vec<(u64, String)> {
+pub fn discover_paired_devices() -> Vec<(u64, String, bool)> {
     let mut list = Vec::new();
     unsafe {
         let params = BLUETOOTH_DEVICE_SEARCH_PARAMS {
@@ -212,7 +275,7 @@ pub fn discover_paired_devices() -> Vec<(u64, String)> {
             loop {
                 let name_len = info.szName.iter().position(|&c| c == 0).unwrap_or(248);
                 let name = String::from_utf16_lossy(&info.szName[..name_len]);
-                list.push((info.Address, name));
+                list.push((info.Address, name, info.fConnected != 0));
 
                 info = std::mem::zeroed();
                 info.dwSize = std::mem::size_of::<BLUETOOTH_DEVICE_INFO>() as u32;
@@ -224,4 +287,30 @@ pub fn discover_paired_devices() -> Vec<(u64, String)> {
         }
     }
     list
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scan_bluetooth_devices() {
+        println!(
+            "SOCKADDR_BTH size = {}",
+            std::mem::size_of::<SOCKADDR_BTH>()
+        );
+        println!("GUID size = {}", std::mem::size_of::<GUID>());
+        let devices = discover_paired_devices();
+        println!("Discovered {} paired Bluetooth devices:", devices.len());
+        for (mac, name, connected) in &devices {
+            println!(
+                "  Device: {} (MAC: {:012X}, Connected: {})",
+                name, mac, connected
+            );
+            match BluetoothStream::connect_spp(*mac) {
+                Ok(_) => println!("    -> Connected successfully to {} via SPP!", name),
+                Err(err) => println!("    -> Connect failed for {}: {}", name, err),
+            }
+        }
+    }
 }
