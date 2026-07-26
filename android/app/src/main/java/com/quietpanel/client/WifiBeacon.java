@@ -3,6 +3,11 @@ package com.quietpanel.client;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.InterfaceAddress;
+import java.net.NetworkInterface;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class WifiBeacon {
     private static final int BEACON_PORT = 27185;
@@ -40,13 +45,15 @@ public final class WifiBeacon {
             socket = new DatagramSocket();
             socket.setBroadcast(true);
             byte[] bytes = PAYLOAD.getBytes("UTF-8");
-            InetAddress broadcastAddr = InetAddress.getByName("255.255.255.255");
-            DatagramPacket packet = new DatagramPacket(bytes, bytes.length, broadcastAddr, BEACON_PORT);
-
             while (running) {
-                try {
-                    socket.send(packet);
-                } catch (Exception ignored) {
+                Set<InetAddress> destinations = findBroadcastAddresses();
+                for (InetAddress destination : destinations) {
+                    try {
+                        DatagramPacket packet = new DatagramPacket(
+                                bytes, bytes.length, destination, BEACON_PORT);
+                        socket.send(packet);
+                    } catch (Exception ignored) {
+                    }
                 }
                 Thread.sleep(INTERVAL_MS);
             }
@@ -61,5 +68,32 @@ public final class WifiBeacon {
                 }
             }
         }
+    }
+
+    private Set<InetAddress> findBroadcastAddresses() {
+        Set<InetAddress> addresses = new HashSet<InetAddress>();
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                NetworkInterface network = interfaces.nextElement();
+                try {
+                    if (!network.isUp() || network.isLoopback()) {
+                        continue;
+                    }
+                    for (InterfaceAddress address : network.getInterfaceAddresses()) {
+                        if (address.getBroadcast() != null) {
+                            addresses.add(address.getBroadcast());
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            addresses.add(InetAddress.getByName("255.255.255.255"));
+        } catch (Exception ignored) {
+        }
+        return addresses;
     }
 }

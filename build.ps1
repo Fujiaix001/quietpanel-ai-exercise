@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = $PSScriptRoot
 $dist = Join-Path $projectRoot 'dist'
+$version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim()
 
 function Copy-IfDifferent {
     param(
@@ -20,7 +21,7 @@ function Copy-IfDifferent {
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
 }
 
-# 1. Rust Bridge Tests & Release Build (v8.1.3 Wi-Fi + Bluetooth Dual Mode)
+# 1. Rust Bridge Tests & Release Build (Wi-Fi + Bluetooth Dual Mode)
 Push-Location (Join-Path $projectRoot 'bridge')
 try {
     cargo fmt --all -- --check
@@ -30,7 +31,7 @@ try {
     cargo test --locked --all-features
     if ($LASTEXITCODE -ne 0) { throw 'cargo test failed' }
 
-    Write-Output "Building Rust Bridge v8.1.3 (Wi-Fi + Bluetooth Dual Mode)..."
+    Write-Output "Building Rust Bridge v$version (Wi-Fi + Bluetooth Dual Mode)..."
     cargo build --release
     if ($LASTEXITCODE -ne 0) { throw 'cargo build wifi failed' }
 } finally {
@@ -40,7 +41,7 @@ try {
 # 2. Android App Build
 Push-Location (Join-Path $projectRoot 'android')
 try {
-    Write-Output "Building Android APK v8.1.3..."
+    Write-Output "Building Android APK v$version..."
     & .\gradlew.bat :app:assembleRelease --no-daemon
     if ($LASTEXITCODE -ne 0) { throw 'Android build failed' }
 } finally {
@@ -49,13 +50,21 @@ try {
 
 # 3. Assemble Dist
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
+$settingsPath = Join-Path $dist 'QuietPanelBridge.json'
+if (-not (Test-Path -LiteralPath $settingsPath)) {
+    @{
+        bluetooth_device = '68:DF:DD:0C:C1:AE'
+        phone_ip = '192.168.44.1'
+        enabledPages = @(0, 1, 2, 3, 4, 5, 6)
+    } | ConvertTo-Json | Set-Content -LiteralPath $settingsPath -Encoding utf8
+}
 
 $wifiExeTemp = Join-Path $projectRoot 'bridge\target\release\QuietPanelBridge.exe'
-Copy-IfDifferent -Source $wifiExeTemp -Destination (Join-Path $dist 'QuietPanelBridge-v8.1.3.exe')
+Copy-IfDifferent -Source $wifiExeTemp -Destination (Join-Path $dist "QuietPanelBridge-v$version.exe")
 Copy-IfDifferent -Source $wifiExeTemp -Destination (Join-Path $dist 'QuietPanelBridge.exe')
 
 $builtApk = Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk'
-Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist 'QuietPanel-v8.1.3.apk') -Force
+Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist "QuietPanel-v$version.apk") -Force
 
 # 4. ADB Tools
 $adbPath = $env:QUIETPANEL_ADB
@@ -77,6 +86,10 @@ Get-ChildItem -LiteralPath (Join-Path $projectRoot 'packaging') -Filter '*.cmd' 
     Copy-Item -LiteralPath $_.FullName -Destination $dist -Force
 }
 
+foreach ($file in @('Setup-Bluetooth-PAN.ps1', 'Setup-Bluetooth-PAN.cmd')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $dist -Force
+}
+
 # 6. Generate Checksums
 $hashFiles = Get-ChildItem -LiteralPath $dist -File |
     Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
@@ -87,5 +100,5 @@ $hashLines = foreach ($file in $hashFiles) {
 }
 Set-Content -LiteralPath (Join-Path $dist 'SHA256SUMS.txt') -Value $hashLines -Encoding ascii
 
-Write-Output "Successfully built QuietPanel v8.1.1 (Wi-Fi + Bluetooth Dual Mode)!"
+Write-Output "Successfully built QuietPanel v$version (Wi-Fi + Bluetooth Dual Mode)!"
 Get-ChildItem -LiteralPath $dist -File | Select-Object Name, Length, LastWriteTime

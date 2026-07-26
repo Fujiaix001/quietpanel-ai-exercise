@@ -12,8 +12,8 @@ android {
         applicationId = "com.quietpanel.client"
         minSdk = 17
         targetSdk = 36
-        versionCode = 8130
-        versionName = "8.1.3"
+        versionCode = 8160
+        versionName = "8.1.6"
     }
 
     buildTypes {
@@ -24,6 +24,10 @@ android {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {

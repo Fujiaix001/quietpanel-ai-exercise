@@ -1,10 +1,26 @@
-# QuietPanel v6.8.13-test
+# QuietPanel v8.1.6
 
-> 專案目前維持穩定的 ADB 版本。完整背景、架構、版本決策、已知問題與未來重啟方式請見 [`docs/PROJECT_CLOSEOUT_2026-07-22.md`](docs/PROJECT_CLOSEOUT_2026-07-22.md)。
+QuietPanel 把 Android 4.2.2 手機變成 Windows 系統監控與快捷控制面板。v8.1.6 的無線版以同一套 TCP 協定支援 Wi-Fi 與 Bluetooth PAN；藍牙不再使用 RFCOMM／虛擬 COM 埠。
 
-## 給一般使用者的下載包
+## v8.1.6 無線連線
 
-一般使用者可下載不含第三方 ADB 二進位檔的 [`QuietPanel-v6.6.2-Windows10-NoADB.zip`](dist/QuietPanel-v6.6.2-Windows10-NoADB.zip)。請先從 [Google 官方 Platform-Tools 頁面](https://developer.android.com/tools/releases/platform-tools)下載 Windows ADB，放入解壓縮後的 QuietPanel 資料夾，再執行 `Install-Android.cmd` 與 `Start-QuietPanel.cmd`。手機必須開啟 USB 偵錯，第一次連接時在手機允許這台 Windows 電腦；詳細中英文說明在包內。
+- 手機在 `TCP 27183` 等待 Bridge，並每兩秒從所有可用介面（包含 Wi-Fi 與 Bluetooth PAN）送出探索封包。
+- Windows Bridge 先嘗試設定檔中的固定 IP，再等待探索封包；固定 IP 失效不會阻止自動探索。
+- Bridge 啟動時會先替已配對手機啟用 Windows 的 NAP 服務，再透過 Windows 10 內建 `bthpanapi.dll` 建立 PAN；不經過 COM4／COM5，也不會把「介面存在」誤判為「已連線」。
+- Bridge 只有在 TCP 不通時才嘗試 PAN，舊 Windows PAN 呼叫卡住時最多送出一次受控喚醒，失敗採指數退避；已連線時不會反覆要求舊藍牙控制器建立同一條 PAN。
+- `dist\QuietPanelBridge.json` 的 `bluetooth_device` 可填手機名稱或藍牙 MAC。這台實測手機預設為 `68:DF:DD:0C:C1:AE`。
+- 手機選擇 `AUTO` 或 `BT` 時會要求 Android 啟用藍牙網路共用。目標 MediaTek Android 4.2.2 ROM 會只對已配對的「電腦」裝置自動接受 PAN；其他 ROM 若未開放 PAN API，請在 Android「網路共用與可攜式無線基地台」手動勾選「藍牙網路共用」。
+- 目標紅米韌體把手機設為 `192.168.44.1`，卻發出錯誤網段的 DHCP。這台設備第一次使用前須在 `dist` 執行 `Setup-Bluetooth-PAN.cmd`，把 Windows PAN 設為 `192.168.44.2/24`。
+
+## 產出檔案
+
+- `dist\QuietPanel-v8.1.6.apk`：Android App。
+- `dist\QuietPanelBridge-v8.1.6.exe`：Wi-Fi／Bluetooth PAN Bridge。
+- `dist\QuietPanelBridge.json`：手機名稱／MAC 與頁面選擇設定。
+- `dist\Setup-Bluetooth-PAN.cmd`：目標紅米的 Windows PAN 位址設定／DHCP 還原工具。
+- `dist\SHA256SUMS.txt`：產出檔案雜湊。
+
+完整的根因、所有診斷經過、驗收證據與其他機器判斷表請見 [`docs/QuietPanel-v8-Bluetooth-PAN-Diagnosis-2026-07-26.md`](docs/QuietPanel-v8-Bluetooth-PAN-Diagnosis-2026-07-26.md)。
 
 ## 系統匣與頁面選擇
 
@@ -20,15 +36,13 @@ Bridge 會偵測 Windows 螢幕的開關狀態。電腦螢幕關閉時，手機�
 
 請在手機的開發人員選項關閉「充電時不休眠／Stay awake」，並設定合適的螢幕逾時（例如 10 分鐘）；否則 Android 仍可能在 USB 充電時保持螢幕亮著。
 
-QuietPanel 把 Android 4.2.2 手機變成 USB 系統監控與快捷控制面板。
-
 > **AI 程式寫作練習／個人自用專案。** 本儲存庫不是正式產品，也不尋求功能請求、問題回報、技術支援或 Pull Request。請勿為此專案投入額外的社群維護、除錯或支援時間。
 
 此專案由使用者與 AI 協作開發，內容僅供學習與私人設備使用；請自行評估執行巨集與系統控制功能的風險。
 
 ## 隱私與網路行為
 
-- 手機與電腦以 USB、ADB Port Forward 在本機傳輸資料；不開放區域網路或網際網路控制埠。
+- v8 無線版會在手機的本機網路介面開啟 `TCP 27183`、`TCP 27184`，並以 `UDP 27185` 探索；請只在信任的 Wi-Fi 或已配對藍牙 PAN 上使用。
 - 程式不收集、不上傳使用者檔案、輸入內容、截圖或系統監控紀錄。
 - 唯一的外部網路請求是 Windows Bridge 每六小時最多一次向 NASA APOD 取得當日公開圖片與說明。
 - NASA API Key 不寫入原始碼。若使用者自行設定 `QUIETPANEL_NASA_API_KEY`，它只會從本機環境變數讀取，且不會被 Git 追蹤。
@@ -43,7 +57,7 @@ QuietPanel 把 Android 4.2.2 手機變成 USB 系統監控與快捷控制面板�
 | 手機 | Xiaomi 2013023，Android 4.2.2（API 17） |
 | 電腦端 | Rust 1.97.1、Windows Rust Bridge |
 | Android 建置 | Microsoft OpenJDK 17.0.12、Android compileSdk 36、Gradle 9.1.0 |
-| 連線 | USB 偵錯、ADB Port Forward `tcp:27183` 與 `tcp:27184` |
+| 連線 | Bluetooth PAN／Wi-Fi，TCP `27183`、`27184`，UDP `27185` |
 
 ## 六個頁面
 
@@ -68,11 +82,16 @@ CPU 連續 30 秒達到 90% 時會顯示過高警告；降至 85% 以下解除�
 
 ## 使用方式
 
-1. 手機開啟 USB 偵錯並以 USB 連接電腦。
-2. 第一次使用時執行 `dist\Install-Android.cmd`。
-3. 每次使用時執行 `dist\Start-QuietPanel.cmd`；Bridge 會出現在 Windows 系統匣。
+1. 第一次安裝仍可用 USB 偵錯執行 `dist\Install-Android.cmd`；安裝完成後資料通訊不需要 USB。
+2. 在 Windows 與手機完成一般藍牙配對。
+3. 這台 Xiaomi 2013023 第一次使用或 Windows 重灌後，在 `dist` 執行 `Setup-Bluetooth-PAN.cmd` 並接受管理員提示。其他手機應先使用 DHCP，不要在未確認其 PAN 網段前套用此靜態位址。
+4. 手機選 `AUTO` 或 `BT`，並確認「藍牙網路共用」已開啟。
+5. 執行 `dist\QuietPanelBridge.exe`；Bridge 會出現在 Windows 系統匣，自動登錄手機的 NAP 服務並建立 PAN 連線。
+6. 若更換手機，修改同目錄 `QuietPanelBridge.json` 的 `bluetooth_device` 與（需要時）`phone_ip`。可填裝置名稱，例如 `紅米手機`，或 MAC，例如 `68:DF:DD:0C:C1:AE`。
 
-Bridge 會自行偵測單一 Android 裝置、建立 `tcp:27183` ADB Forward，並在連線中斷後重新偵測。若同時連接多台 Android 裝置，Bridge 會停止選擇並顯示裝置清單，避免把指令送到錯誤裝置。
+若不再使用目標紅米的靜態設定，執行 `Setup-Bluetooth-PAN.cmd -RestoreDhcp`。設定工具第一次執行會先保存原介面資料到 `Bluetooth-PAN-before-QuietPanel.json`。
+
+USB ADB 版仍可用 `Start-QuietPanel-v6-ADB.cmd` 作為獨立備援；v8 無線 Bridge 不建立 ADB Forward。
 
 NASA APOD 最多每六小時檢查一次，Win10 與手機都只保留最新一張快取。一般系統資料使用 `tcp:27183`；圖片使用獨立的 `tcp:27184` 二進位通道，避免把圖片編碼成大型 JSON。若當日內容是影片，第四頁顯示 NASA 提供的影片縮圖。預設使用 NASA `DEMO_KEY`；可用環境變數 `QUIETPANEL_NASA_API_KEY` 設定自己的免費 API Key。
 

@@ -234,7 +234,7 @@ public final class MainActivity extends Activity
         setActionButtonsEnabled(false);
         loadApodCache();
 
-        transport = new TransportServer(this);
+        transport = new TransportServer(this, this);
         transport.setMode(savedMode);
         transport.start();
         updateModePillText(savedMode);
@@ -303,7 +303,7 @@ public final class MainActivity extends Activity
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                connectionText.setText(connected ? "USB LIVE  ·  " + detail : detail);
+                connectionText.setText(connected ? "IP LIVE  ·  " + detail : detail);
                 connectionText.setTextColor(connected ? ACCENT : SECONDARY);
                 setActionButtonsEnabled(connected);
                 if (!connected) {
@@ -395,7 +395,7 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v8.1.3", 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QUIETPANEL  v" + BuildConfig.VERSION_NAME, 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         
         modePillButton = new TextView(this);

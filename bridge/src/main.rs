@@ -4,17 +4,22 @@ mod actions;
 #[cfg(feature = "adb")]
 mod adb;
 mod apod;
-mod bt;
 mod display;
 mod metrics;
+#[cfg(not(feature = "adb"))]
+mod pan;
 mod protocol;
 mod settings;
 mod tray;
 
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Write};
+#[cfg(feature = "adb")]
+use std::net::Ipv4Addr;
 #[cfg(not(feature = "adb"))]
 use std::net::UdpSocket;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::net::{IpAddr, SocketAddr, TcpStream};
+#[cfg(not(feature = "adb"))]
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -30,65 +35,23 @@ const RETRY_DELAY: Duration = Duration::from_secs(2);
 const READ_POLL: Duration = Duration::from_millis(250);
 const STATE_INTERVAL: Duration = Duration::from_secs(1);
 const PING_INTERVAL: Duration = Duration::from_secs(5);
+#[cfg(not(feature = "adb"))]
+const PAN_RESCUE_DELAY: Duration = Duration::from_secs(8);
 
-enum BridgeStream {
-    Tcp(TcpStream),
-    Bt(bt::BluetoothStream),
+#[cfg(not(feature = "adb"))]
+struct PanAttempt {
+    sender: mpsc::Sender<io::Result<pan::ConnectOutcome>>,
+    receiver: mpsc::Receiver<io::Result<pan::ConnectOutcome>>,
+    started: Instant,
+    workers: usize,
+    rescue_started: bool,
+    last_error: Option<String>,
 }
 
-impl Read for BridgeStream {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            BridgeStream::Tcp(s) => s.read(buf),
-            BridgeStream::Bt(s) => s.read(buf),
-        }
-    }
-}
-
-impl Write for BridgeStream {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            BridgeStream::Tcp(s) => s.write(buf),
-            BridgeStream::Bt(s) => s.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        match self {
-            BridgeStream::Tcp(s) => s.flush(),
-            BridgeStream::Bt(s) => s.flush(),
-        }
-    }
-}
-
-impl BridgeStream {
-    fn try_clone(&self) -> io::Result<Self> {
-        match self {
-            BridgeStream::Tcp(s) => Ok(BridgeStream::Tcp(s.try_clone()?)),
-            BridgeStream::Bt(s) => Ok(BridgeStream::Bt(s.try_clone()?)),
-        }
-    }
-
-    fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        match self {
-            BridgeStream::Tcp(s) => s.set_read_timeout(dur),
-            BridgeStream::Bt(s) => s.set_read_timeout(dur),
-        }
-    }
-
-    fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        match self {
-            BridgeStream::Tcp(s) => s.set_write_timeout(dur),
-            BridgeStream::Bt(s) => s.set_write_timeout(dur),
-        }
-    }
-
-    fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
-        match self {
-            BridgeStream::Tcp(s) => s.set_nodelay(nodelay),
-            BridgeStream::Bt(_) => Ok(()),
-        }
-    }
+#[cfg(not(feature = "adb"))]
+enum PanProgress {
+    Connected,
+    Failed(String),
 }
 
 fn main() {
@@ -111,10 +74,75 @@ fn main() {
     #[cfg(not(feature = "adb"))]
     println!("Mode: Wi-Fi LAN / Bluetooth Dual Mode (Port {PORT})");
 
+    #[cfg(not(feature = "adb"))]
+    let bluetooth_target = settings::load_bluetooth_device();
+    #[cfg(not(feature = "adb"))]
+    let mut next_pan_attempt = Instant::now();
+    #[cfg(not(feature = "adb"))]
+    let mut pan_backoff = Duration::from_secs(8);
+    #[cfg(not(feature = "adb"))]
+    let mut pan_attempt: Option<PanAttempt> = None;
+
     while tray.is_running() {
         if let Some(changed) = tray.take_changed() {
             pages = changed;
             settings::save_pages(&pages);
+        }
+
+        #[cfg(not(feature = "adb"))]
+        {
+            let mut progress = None;
+            if let Some(attempt) = pan_attempt.as_mut() {
+                while let Ok(result) = attempt.receiver.try_recv() {
+                    attempt.workers = attempt.workers.saturating_sub(1);
+                    match result {
+                        Ok(pan::ConnectOutcome::Connected) => {
+                            progress = Some(PanProgress::Connected);
+                        }
+                        Err(error) => attempt.last_error = Some(error.to_string()),
+                    }
+                }
+
+                // This Windows 10 / Intel stack can leave the first bthpanapi
+                // call blocked until one duplicate call reports error 548.
+                // Launch at most one rescue call, never periodic blind workers.
+                if progress.is_none()
+                    && !attempt.rescue_started
+                    && attempt.started.elapsed() >= PAN_RESCUE_DELAY
+                {
+                    spawn_pan_worker(bluetooth_target.clone(), attempt.sender.clone());
+                    attempt.workers += 1;
+                    attempt.rescue_started = true;
+                    reporter.report("Bluetooth PAN 連線等待中；送出一次受控喚醒");
+                }
+
+                if progress.is_none() && attempt.workers == 0 {
+                    progress = Some(PanProgress::Failed(
+                        attempt
+                            .last_error
+                            .take()
+                            .unwrap_or_else(|| String::from("未知錯誤")),
+                    ));
+                }
+            }
+
+            match progress {
+                Some(PanProgress::Connected) => {
+                    reporter.report(&format!("Bluetooth PAN 已連接至 {bluetooth_target}"));
+                    pan_attempt = None;
+                    pan_backoff = Duration::from_secs(8);
+                    next_pan_attempt = Instant::now() + Duration::from_secs(30);
+                }
+                Some(PanProgress::Failed(error)) => {
+                    reporter.report(&format!(
+                        "Bluetooth PAN {bluetooth_target}: {error}；稍後重試"
+                    ));
+                    pan_attempt = None;
+                    next_pan_attempt = Instant::now() + pan_backoff;
+                    pan_backoff = std::cmp::min(pan_backoff * 2, Duration::from_secs(300));
+                }
+                None => {}
+            }
         }
 
         #[cfg(feature = "adb")]
@@ -140,19 +168,22 @@ fn main() {
                     continue;
                 }
             };
-            (
-                BridgeStream::Tcp(s),
-                serial,
-                IpAddr::V4(Ipv4Addr::LOCALHOST),
-            )
+            (s, serial, IpAddr::V4(Ipv4Addr::LOCALHOST))
         };
 
         #[cfg(not(feature = "adb"))]
         let (stream, label, phone_ip) = {
             match discover_connection() {
-                Some((stream, label, ip)) => (stream, label, ip),
+                Some(connection) => connection,
                 None => {
-                    reporter.report("搜尋 QuietPanel Android 裝置中 (Wi-Fi / 藍牙)...");
+                    if pan_attempt.is_none() && Instant::now() >= next_pan_attempt {
+                        reporter.report(&format!(
+                            "正在建立 Bluetooth PAN ({bluetooth_target})；請留意手機授權提示"
+                        ));
+                        pan_attempt = Some(start_pan_attempt(bluetooth_target.clone()));
+                    } else {
+                        reporter.report("等待 QuietPanel Android 裝置 (藍牙 PAN / Wi-Fi)...");
+                    }
                     thread::sleep(RETRY_DELAY);
                     continue;
                 }
@@ -174,33 +205,54 @@ fn main() {
 }
 
 #[cfg(not(feature = "adb"))]
-fn discover_connection() -> Option<(BridgeStream, String, IpAddr)> {
-    if let Some(ip) = discover_phone_ip() {
-        let address = SocketAddr::new(ip, PORT);
-        if let Ok(stream) = TcpStream::connect_timeout(&address, Duration::from_millis(1500)) {
-            return Some((BridgeStream::Tcp(stream), format!("Wi-Fi {ip}"), ip));
+fn start_pan_attempt(target: String) -> PanAttempt {
+    let (sender, receiver) = mpsc::channel();
+    spawn_pan_worker(target, sender.clone());
+    PanAttempt {
+        sender,
+        receiver,
+        started: Instant::now(),
+        workers: 1,
+        rescue_started: false,
+        last_error: None,
+    }
+}
+
+#[cfg(not(feature = "adb"))]
+fn spawn_pan_worker(target: String, sender: mpsc::Sender<io::Result<pan::ConnectOutcome>>) {
+    thread::spawn(move || {
+        let _ = sender.send(pan::connect_by_name(&target));
+    });
+}
+
+#[cfg(not(feature = "adb"))]
+fn discover_connection() -> Option<(TcpStream, String, IpAddr)> {
+    if let Some(ip_str) = settings::load_phone_ip() {
+        if let Ok(ip) = ip_str.parse::<IpAddr>() {
+            if let Some(connection) = connect_to_phone(ip) {
+                return Some(connection);
+            }
         }
     }
 
-    if let Some((bt_stream, device_name)) = bt::BluetoothStream::discover_and_connect() {
-        return Some((
-            BridgeStream::Bt(bt_stream),
-            format!("藍牙 {device_name}"),
-            IpAddr::V4(Ipv4Addr::LOCALHOST),
-        ));
+    if let Some(ip) = receive_phone_beacon() {
+        connect_to_phone(ip)
+    } else {
+        None
     }
+}
 
+#[cfg(not(feature = "adb"))]
+fn connect_to_phone(ip: IpAddr) -> Option<(TcpStream, String, IpAddr)> {
+    let address = SocketAddr::new(ip, PORT);
+    if let Ok(stream) = TcpStream::connect_timeout(&address, Duration::from_millis(1500)) {
+        return Some((stream, format!("IP {ip} (Wi-Fi / Bluetooth PAN)"), ip));
+    }
     None
 }
 
 #[cfg(not(feature = "adb"))]
-fn discover_phone_ip() -> Option<IpAddr> {
-    if let Some(ip_str) = settings::load_phone_ip() {
-        if let Ok(ip) = ip_str.parse::<IpAddr>() {
-            return Some(ip);
-        }
-    }
-
+fn receive_phone_beacon() -> Option<IpAddr> {
     let socket = UdpSocket::bind(("0.0.0.0", UDP_BEACON_PORT)).ok()?;
     socket
         .set_read_timeout(Some(Duration::from_millis(1500)))
@@ -216,7 +268,7 @@ fn discover_phone_ip() -> Option<IpAddr> {
 }
 
 fn run_session(
-    mut writer: BridgeStream,
+    mut writer: TcpStream,
     reporter: &mut StatusReporter,
     phone_ip: IpAddr,
     display_monitor: &mut display::DisplayMonitor,
@@ -303,7 +355,7 @@ fn run_session(
     }
 }
 
-fn write_json(stream: &mut BridgeStream, value: &Value) -> io::Result<()> {
+fn write_json(stream: &mut TcpStream, value: &Value) -> io::Result<()> {
     serde_json::to_writer(&mut *stream, value).map_err(io::Error::other)?;
     stream.write_all(b"\n")?;
     stream.flush()

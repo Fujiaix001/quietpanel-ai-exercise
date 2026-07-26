@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 
 pub const PAGE_COUNT: usize = 7;
 pub const DEFAULT_PAGES: [bool; PAGE_COUNT] = [true; PAGE_COUNT];
+#[cfg(not(feature = "adb"))]
+const DEFAULT_BLUETOOTH_DEVICE: &str = "紅米手機";
 
 pub fn load_pages() -> [bool; PAGE_COUNT] {
     let Ok(text) = fs::read_to_string(settings_path()) else {
@@ -23,6 +25,22 @@ pub fn load_phone_ip() -> Option<String> {
         .map(String::from)
 }
 
+#[cfg(not(feature = "adb"))]
+pub fn load_bluetooth_device() -> String {
+    fs::read_to_string(settings_path())
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|value| {
+            value
+                .get("bluetooth_device")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(String::from)
+        })
+        .unwrap_or_else(|| String::from(DEFAULT_BLUETOOTH_DEVICE))
+}
+
 pub fn save_pages(pages: &[bool; PAGE_COUNT]) {
     if !pages.iter().any(|enabled| *enabled) {
         return;
@@ -32,7 +50,12 @@ pub fn save_pages(pages: &[bool; PAGE_COUNT]) {
         .enumerate()
         .filter_map(|(index, is_enabled)| is_enabled.then_some(index))
         .collect();
-    let value = json!({ "enabledPages": enabled });
+    let mut value = fs::read_to_string(settings_path())
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    value["enabledPages"] = json!(enabled);
     if let Ok(text) = serde_json::to_string_pretty(&value) {
         let _ = fs::write(settings_path(), text);
     }

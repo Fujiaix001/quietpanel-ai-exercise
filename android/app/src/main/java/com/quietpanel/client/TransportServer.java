@@ -1,32 +1,32 @@
 package com.quietpanel.client;
 
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothServerSocket;
-import android.bluetooth.BluetoothSocket;
+import android.content.Context;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.Closeable;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * QuietPanel's application protocol always runs over TCP.
+ *
+ * Wi-Fi and Bluetooth PAN are only different network interfaces. Keeping one
+ * TCP server avoids the RFCOMM/virtual-COM compatibility problems found on the
+ * target Android 4.2 phone and Intel Bluetooth adapter.
+ */
 public final class TransportServer {
     public static final int MODE_AUTO = 0;
     public static final int MODE_WIFI = 1;
     public static final int MODE_BT = 2;
 
     private static final int PORT = 27183;
-    private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
     public interface Listener {
         void onConnectionChanged(boolean connected, String detail);
@@ -37,21 +37,20 @@ public final class TransportServer {
     }
 
     private final Listener listener;
+    private final WifiBeacon beacon = new WifiBeacon();
+    private final BluetoothPanController panController;
     private final AtomicLong nextActionId = new AtomicLong(1);
     private volatile boolean running;
     private volatile int connectionMode = MODE_AUTO;
 
-    private Thread wifiThread;
-    private Thread btThread;
-
+    private Thread serverThread;
     private ServerSocket serverSocket;
-    private BluetoothServerSocket btServerSocket;
-
-    private Closeable activeClientSocket;
+    private Socket activeClientSocket;
     private BufferedWriter writer;
 
-    public TransportServer(Listener listener) {
+    public TransportServer(Context context, Listener listener) {
         this.listener = listener;
+        this.panController = new BluetoothPanController(context);
     }
 
     public synchronized void setMode(int mode) {
@@ -72,36 +71,32 @@ public final class TransportServer {
         }
 
         running = true;
-        if (connectionMode == MODE_AUTO || connectionMode == MODE_WIFI) {
-            wifiThread = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    runWifiServer();
-                }
-            }, "quietpanel-wifi");
-            wifiThread.start();
-        }
-
+        beacon.start();
         if (connectionMode == MODE_AUTO || connectionMode == MODE_BT) {
-            btThread = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    runBluetoothServer();
-                }
-            }, "quietpanel-bt");
-            btThread.start();
+            panController.requestTetheringEnabled();
         }
+        serverThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                runIpServer();
+            }
+        }, "quietpanel-ip-server");
+        serverThread.start();
     }
 
     public synchronized void stop() {
         running = false;
+        beacon.stop();
+        panController.close();
         closeQuietly(serverSocket);
         serverSocket = null;
-        closeQuietly(btServerSocket);
-        btServerSocket = null;
         closeQuietly(activeClientSocket);
         activeClientSocket = null;
         writer = null;
+        if (serverThread != null) {
+            serverThread.interrupt();
+            serverThread = null;
+        }
     }
 
     public long sendAction(String action) {
@@ -121,7 +116,7 @@ public final class TransportServer {
         return id;
     }
 
-    private void runWifiServer() {
+    private void runIpServer() {
         while (running) {
             try {
                 synchronized (this) {
@@ -129,7 +124,7 @@ public final class TransportServer {
                     serverSocket.setReuseAddress(true);
                     serverSocket.bind(new InetSocketAddress(PORT));
                 }
-                notifyConnection(false, "等待 Wi-Fi/IP 連線 (Port " + PORT + ")…");
+                notifyConnection(false, waitingMessage());
 
                 while (running) {
                     Socket socket = serverSocket.accept();
@@ -151,17 +146,17 @@ public final class TransportServer {
 
                     BufferedReader reader = new BufferedReader(
                             new InputStreamReader(socket.getInputStream(), "UTF-8"));
-                    BufferedWriter bw = new BufferedWriter(
+                    BufferedWriter newWriter = new BufferedWriter(
                             new OutputStreamWriter(socket.getOutputStream(), "UTF-8"));
                     synchronized (this) {
-                        writer = bw;
+                        writer = newWriter;
                     }
 
-                    handleStreamSession(reader, socket, "Wi-Fi 連線");
+                    handleStreamSession(reader, socket, "IP 連線");
                 }
             } catch (Exception error) {
                 if (running) {
-                    notifyConnection(false, "Wi-Fi 服務異常：" + safeMessage(error));
+                    notifyConnection(false, "IP 服務異常：" + safeMessage(error));
                     try {
                         Thread.sleep(2000);
                     } catch (InterruptedException ignored) {
@@ -176,122 +171,18 @@ public final class TransportServer {
         }
     }
 
-    private void runBluetoothServer() {
-        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-        if (adapter == null) {
-            if (connectionMode == MODE_BT) {
-                notifyConnection(false, "裝置不支援藍牙");
-            }
-            return;
+    private String waitingMessage() {
+        if (connectionMode == MODE_WIFI) {
+            return "等待 Wi-Fi 連線 (TCP " + PORT + ")…";
         }
-
-        while (running) {
-            try {
-                if (!adapter.isEnabled()) {
-                    if (connectionMode == MODE_BT) {
-                        notifyConnection(false, "請先開啟裝置藍牙");
-                    }
-                    Thread.sleep(3000);
-                    continue;
-                }
-
-                synchronized (this) {
-                    try {
-                        btServerSocket = adapter.listenUsingInsecureRfcommWithServiceRecord("QuietPanel", SPP_UUID);
-                    } catch (Exception e) {
-                        btServerSocket = adapter.listenUsingRfcommWithServiceRecord("QuietPanel", SPP_UUID);
-                    }
-                }
-                notifyConnection(false, "等待藍牙連線 (SPP)…");
-
-                // Start active client reconnect thread to wake up Windows ACL link
-                new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        tryBluetoothClientConnect(adapter);
-                    }
-                }).start();
-
-                while (running) {
-                    BluetoothSocket btSocket = btServerSocket.accept();
-                    if (!running) {
-                        closeQuietly(btSocket);
-                        break;
-                    }
-
-                    synchronized (this) {
-                        if (activeClientSocket != null) {
-                            closeQuietly(btSocket);
-                            continue;
-                        }
-                        activeClientSocket = btSocket;
-                    }
-
-                    BufferedReader reader = new BufferedReader(
-                            new InputStreamReader(btSocket.getInputStream(), "UTF-8"));
-                    BufferedWriter bw = new BufferedWriter(
-                            new OutputStreamWriter(btSocket.getOutputStream(), "UTF-8"));
-                    synchronized (this) {
-                        writer = bw;
-                    }
-
-                    handleStreamSession(reader, btSocket, "藍牙連線");
-                }
-            } catch (Exception error) {
-                if (running) {
-                    notifyConnection(false, "藍牙服務等待中");
-                    try {
-                        Thread.sleep(2500);
-                    } catch (InterruptedException ignored) {
-                    }
-                }
-            } finally {
-                synchronized (this) {
-                    closeQuietly(btServerSocket);
-                    btServerSocket = null;
-                }
-            }
+        if (connectionMode == MODE_BT) {
+            return "等待藍牙 PAN 連線 (TCP " + PORT + ")…";
         }
+        return "等待 Wi-Fi / 藍牙 PAN (TCP " + PORT + ")…";
     }
 
-    private void tryBluetoothClientConnect(BluetoothAdapter adapter) {
-        if (activeClientSocket != null || !running) return;
-        Set<BluetoothDevice> pairedDevices = adapter.getBondedDevices();
-        if (pairedDevices == null || pairedDevices.isEmpty()) return;
-
-        for (BluetoothDevice device : pairedDevices) {
-            if (activeClientSocket != null || !running) break;
-            BluetoothSocket clientSocket = null;
-            try {
-                try {
-                    clientSocket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
-                } catch (Exception e) {
-                    clientSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
-                }
-                clientSocket.connect();
-                synchronized (this) {
-                    if (activeClientSocket != null) {
-                        closeQuietly(clientSocket);
-                        return;
-                    }
-                    activeClientSocket = clientSocket;
-                }
-                BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(clientSocket.getInputStream(), "UTF-8"));
-                BufferedWriter bw = new BufferedWriter(
-                        new OutputStreamWriter(clientSocket.getOutputStream(), "UTF-8"));
-                synchronized (this) {
-                    writer = bw;
-                }
-                handleStreamSession(reader, clientSocket, "藍牙連線 (" + device.getName() + ")");
-                return;
-            } catch (Exception ignored) {
-                closeQuietly(clientSocket);
-            }
-        }
-    }
-
-    private void handleStreamSession(BufferedReader reader, Closeable clientSocket, String transportName) {
+    private void handleStreamSession(BufferedReader reader, Socket clientSocket,
+                                     String transportName) {
         notifyConnection(true, transportName + " 已建立");
         try {
             String line;
@@ -311,7 +202,7 @@ public final class TransportServer {
             }
             closeQuietly(clientSocket);
             if (running) {
-                notifyConnection(false, "等待電腦連線中");
+                notifyConnection(false, waitingMessage());
             }
         }
     }
@@ -330,7 +221,7 @@ public final class TransportServer {
                 JSONObject acknowledgement = new JSONObject();
                 acknowledgement.put("v", 1);
                 acknowledgement.put("type", "hello_ack");
-                acknowledgement.put("version", "8.1.2");
+                acknowledgement.put("version", BuildConfig.VERSION_NAME);
                 writeMessage(acknowledgement);
             } else if ("display_state".equals(type)) {
                 listener.onDisplayStateChanged(message.optBoolean("on", true));
@@ -386,12 +277,17 @@ public final class TransportServer {
                 : message;
     }
 
-    private static void closeQuietly(Closeable closeable) {
-        if (closeable != null) {
-            try {
-                closeable.close();
-            } catch (Exception ignored) {
+    private static void closeQuietly(Object socket) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            if (socket instanceof Socket) {
+                ((Socket) socket).close();
+            } else if (socket instanceof ServerSocket) {
+                ((ServerSocket) socket).close();
             }
+        } catch (Exception ignored) {
         }
     }
 }
