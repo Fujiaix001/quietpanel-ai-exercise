@@ -634,8 +634,8 @@ public final class MainActivity extends Activity
         workYouTubeButton.setAllCaps(false);
         workYouTubeButton.setTypeface(PhotoFontManager.get(this, clockFontStyle));
         StateListDrawable ytBg = new StateListDrawable();
-        ytBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(190, 30, 42, 56)));
-        ytBg.addState(new int[] {}, rounded(Color.argb(125, 12, 18, 26)));
+        ytBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(165, 30, 42, 56)));
+        ytBg.addState(new int[] {}, rounded(Color.argb(105, 12, 18, 26)));
         workYouTubeButton.setBackground(ytBg);
         workYouTubeButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -652,8 +652,8 @@ public final class MainActivity extends Activity
         workScreenshotButton.setAllCaps(false);
         workScreenshotButton.setTypeface(PhotoFontManager.get(this, clockFontStyle));
         StateListDrawable screenshotBg = new StateListDrawable();
-        screenshotBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(190, 30, 42, 56)));
-        screenshotBg.addState(new int[] {}, rounded(Color.argb(125, 12, 18, 26)));
+        screenshotBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(165, 30, 42, 56)));
+        screenshotBg.addState(new int[] {}, rounded(Color.argb(105, 12, 18, 26)));
         workScreenshotButton.setBackground(screenshotBg);
         workScreenshotButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -670,8 +670,8 @@ public final class MainActivity extends Activity
         workPasteButton.setAllCaps(false);
         workPasteButton.setTypeface(PhotoFontManager.get(this, clockFontStyle));
         StateListDrawable pasteBg = new StateListDrawable();
-        pasteBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(190, 30, 42, 56)));
-        pasteBg.addState(new int[] {}, rounded(Color.argb(125, 12, 18, 26)));
+        pasteBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(165, 30, 42, 56)));
+        pasteBg.addState(new int[] {}, rounded(Color.argb(105, 12, 18, 26)));
         workPasteButton.setBackground(pasteBg);
         workPasteButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -680,11 +680,11 @@ public final class MainActivity extends Activity
             }
         });
 
-        LinearLayout.LayoutParams btnYtParams = new LinearLayout.LayoutParams(dp(140), dp(72));
+        LinearLayout.LayoutParams btnYtParams = new LinearLayout.LayoutParams(dp(140), dp(60));
         btnYtParams.bottomMargin = dp(8);
-        LinearLayout.LayoutParams btn1Params = new LinearLayout.LayoutParams(dp(140), dp(72));
+        LinearLayout.LayoutParams btn1Params = new LinearLayout.LayoutParams(dp(140), dp(60));
         btn1Params.bottomMargin = dp(8);
-        LinearLayout.LayoutParams btn2Params = new LinearLayout.LayoutParams(dp(140), dp(72));
+        LinearLayout.LayoutParams btn2Params = new LinearLayout.LayoutParams(dp(140), dp(60));
         workButtonsContainer.addView(workYouTubeButton, btnYtParams);
         workButtonsContainer.addView(workScreenshotButton, btn1Params);
         workButtonsContainer.addView(workPasteButton, btn2Params);
