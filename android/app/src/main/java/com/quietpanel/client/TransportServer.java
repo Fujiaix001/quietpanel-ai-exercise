@@ -1,7 +1,5 @@
 package com.quietpanel.client;
 
-import android.content.Context;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -15,17 +13,9 @@ import java.net.Socket;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * QuietPanel's application protocol always runs over TCP.
- *
- * Wi-Fi and Bluetooth PAN are only different network interfaces. Keeping one
- * TCP server avoids the RFCOMM/virtual-COM compatibility problems found on the
- * target Android 4.2 phone and Intel Bluetooth adapter.
+ * The server is reachable only through the local port created by ADB forward.
  */
 public final class TransportServer {
-    public static final int MODE_AUTO = 0;
-    public static final int MODE_WIFI = 1;
-    public static final int MODE_BT = 2;
-
     private static final int PORT = 27183;
 
     public interface Listener {
@@ -37,32 +27,16 @@ public final class TransportServer {
     }
 
     private final Listener listener;
-    private final WifiBeacon beacon = new WifiBeacon();
-    private final BluetoothPanController panController;
     private final AtomicLong nextActionId = new AtomicLong(1);
     private volatile boolean running;
-    private volatile int connectionMode = MODE_AUTO;
 
     private Thread serverThread;
     private ServerSocket serverSocket;
     private Socket activeClientSocket;
     private BufferedWriter writer;
 
-    public TransportServer(Context context, Listener listener) {
+    public TransportServer(Listener listener) {
         this.listener = listener;
-        this.panController = new BluetoothPanController(context);
-    }
-
-    public synchronized void setMode(int mode) {
-        this.connectionMode = mode;
-        if (running) {
-            stop();
-            start();
-        }
-    }
-
-    public int getMode() {
-        return connectionMode;
     }
 
     public synchronized void start() {
@@ -71,23 +45,17 @@ public final class TransportServer {
         }
 
         running = true;
-        beacon.start();
-        if (connectionMode == MODE_AUTO || connectionMode == MODE_BT) {
-            panController.requestTetheringEnabled();
-        }
         serverThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 runIpServer();
             }
-        }, "quietpanel-ip-server");
+        }, "quietpanel-adb-server");
         serverThread.start();
     }
 
     public synchronized void stop() {
         running = false;
-        beacon.stop();
-        panController.close();
         closeQuietly(serverSocket);
         serverSocket = null;
         closeQuietly(activeClientSocket);
@@ -122,7 +90,7 @@ public final class TransportServer {
                 synchronized (this) {
                     serverSocket = new ServerSocket();
                     serverSocket.setReuseAddress(true);
-                    serverSocket.bind(new InetSocketAddress(PORT));
+                    serverSocket.bind(new InetSocketAddress("127.0.0.1", PORT));
                 }
                 notifyConnection(false, waitingMessage());
 
@@ -152,11 +120,11 @@ public final class TransportServer {
                         writer = newWriter;
                     }
 
-                    handleStreamSession(reader, socket, "IP 連線");
+                    handleStreamSession(reader, socket, "ADB 連線");
                 }
             } catch (Exception error) {
                 if (running) {
-                    notifyConnection(false, "IP 服務異常：" + safeMessage(error));
+                    notifyConnection(false, "ADB 服務異常：" + safeMessage(error));
                     try {
                         Thread.sleep(2000);
                     } catch (InterruptedException ignored) {
@@ -172,13 +140,7 @@ public final class TransportServer {
     }
 
     private String waitingMessage() {
-        if (connectionMode == MODE_WIFI) {
-            return "等待 Wi-Fi 連線 (TCP " + PORT + ")…";
-        }
-        if (connectionMode == MODE_BT) {
-            return "等待藍牙 PAN 連線 (TCP " + PORT + ")…";
-        }
-        return "等待 Wi-Fi / 藍牙 PAN (TCP " + PORT + ")…";
+        return "等待 USB ADB 連線…";
     }
 
     private void handleStreamSession(BufferedReader reader, Socket clientSocket,

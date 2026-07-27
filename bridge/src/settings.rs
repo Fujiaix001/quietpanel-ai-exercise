@@ -5,40 +5,12 @@ use serde_json::{json, Value};
 
 pub const PAGE_COUNT: usize = 7;
 pub const DEFAULT_PAGES: [bool; PAGE_COUNT] = [true; PAGE_COUNT];
-#[cfg(not(feature = "adb"))]
-const DEFAULT_BLUETOOTH_DEVICE: &str = "紅米手機";
 
 pub fn load_pages() -> [bool; PAGE_COUNT] {
     let Ok(text) = fs::read_to_string(settings_path()) else {
         return DEFAULT_PAGES;
     };
     parse_pages(&text).unwrap_or(DEFAULT_PAGES)
-}
-
-#[allow(dead_code)]
-pub fn load_phone_ip() -> Option<String> {
-    let text = fs::read_to_string(settings_path()).ok()?;
-    let value: Value = serde_json::from_str(&text).ok()?;
-    value
-        .get("phone_ip")
-        .and_then(Value::as_str)
-        .map(String::from)
-}
-
-#[cfg(not(feature = "adb"))]
-pub fn load_bluetooth_device() -> String {
-    fs::read_to_string(settings_path())
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .and_then(|value| {
-            value
-                .get("bluetooth_device")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(String::from)
-        })
-        .unwrap_or_else(|| String::from(DEFAULT_BLUETOOTH_DEVICE))
 }
 
 pub fn save_pages(pages: &[bool; PAGE_COUNT]) {

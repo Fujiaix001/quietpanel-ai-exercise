@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set "APK=QuietPanel-v6.8.13-ADB.apk"
+set "APK=QuietPanel-v6.9.0-ADB.apk"
 if not exist "%APK%" (
   for %%F in (QuietPanel-v6*.apk) do set "APK=%%F"
 )
@@ -20,5 +20,5 @@ if errorlevel 1 (
 
 adb.exe shell am start -n com.quietpanel.client/.MainActivity
 echo.
-echo QuietPanel Android v6.8.13 ADB installed and started.
+echo QuietPanel Android v6.9.0 ADB installed and started.
 pause

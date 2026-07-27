@@ -1,6 +1,6 @@
 [package]
 name = "quietpanel-bridge"
-version = "8.1.6"
+version = "6.9.0"
 edition = "2021"
 
 [[bin]]
@@ -8,8 +8,7 @@ name = "QuietPanelBridge"
 path = "src/main.rs"
 
 [features]
-default = ["wifi"]
-wifi = []
+default = ["adb"]
 adb = []
 
 [dependencies]

@@ -40,11 +40,6 @@ public final class PhotoFolderActivity extends Activity {
     public static final String CLOCK_FONT_STYLE = "clock_font_style";
     public static final String CLOCK_TEXT_SCALE = "clock_text_scale";
     public static final String PHOTO_INTERVAL_SECONDS = "photo_interval_seconds";
-    public static final String EFFECT_SOFT_BACKGROUND = "effect_soft_background";
-    public static final String EFFECT_SMART_FOCUS = "effect_smart_focus";
-    public static final String EFFECT_ADAPTIVE_COLOR = "effect_adaptive_color";
-    public static final String EFFECT_POLAROID_FRAME = "effect_polaroid_frame";
-    public static final String EFFECT_3D_TRANSITION = "effect_3d_transition";
     public static final String CLOCK_X_RATIO = "clock_x_ratio";
     public static final String CLOCK_Y_RATIO = "clock_y_ratio";
     public static final String CLOCK_POSITION_CUSTOMIZED = "clock_position_customized";
@@ -64,11 +59,6 @@ public final class PhotoFolderActivity extends Activity {
     private LinearLayout folderList;
     private CheckBox backgroundCheck;
     private Spinner fontSpinner;
-    private CheckBox softBackgroundCheck;
-    private CheckBox smartFocusCheck;
-    private CheckBox adaptiveColorCheck;
-    private CheckBox polaroidFrameCheck;
-    private CheckBox transition3dCheck;
     private TextView intervalText;
     private SeekBar intervalSeek;
 
@@ -219,30 +209,6 @@ public final class PhotoFolderActivity extends Activity {
         root.addView(fontSpinner, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
 
-        root.addView(sectionTitle("選用相片特效（預設關閉）"));
-        LinearLayout effects = new LinearLayout(this);
-        effects.setOrientation(LinearLayout.VERTICAL);
-        effects.setPadding(dp(8), dp(3), dp(8), dp(3));
-        effects.setBackground(rounded(PANEL));
-        softBackgroundCheck = effectCheck("柔和背景",
-                preferences.getBoolean(EFFECT_SOFT_BACKGROUND, false));
-        smartFocusCheck = effectCheck("智慧焦點",
-                preferences.getBoolean(EFFECT_SMART_FOCUS, false));
-        adaptiveColorCheck = effectCheck("自適應時鐘底板顏色",
-                preferences.getBoolean(EFFECT_ADAPTIVE_COLOR, false));
-        polaroidFrameCheck = effectCheck("拍立得框",
-                preferences.getBoolean(EFFECT_POLAROID_FRAME, false));
-        transition3dCheck = effectCheck("3D 轉場",
-                preferences.getBoolean(EFFECT_3D_TRANSITION, false));
-        effects.addView(softBackgroundCheck);
-        effects.addView(smartFocusCheck);
-        effects.addView(adaptiveColorCheck);
-        effects.addView(polaroidFrameCheck);
-        effects.addView(transition3dCheck);
-        root.addView(effects, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
         LinearLayout pathRow = new LinearLayout(this);
         pathRow.setGravity(Gravity.CENTER_VERTICAL);
         Button up = button("上一層", PANEL);
@@ -266,7 +232,8 @@ public final class PhotoFolderActivity extends Activity {
         currentFolderCheck.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                setSelected(currentDirectory, currentFolderCheck.isChecked());
+                setSelected(currentDirectory,
+                        isPartiallySelected(currentDirectory) || currentFolderCheck.isChecked());
             }
         });
         root.addView(currentFolderCheck, new LinearLayout.LayoutParams(
@@ -289,7 +256,7 @@ public final class PhotoFolderActivity extends Activity {
 
     private void showDirectory() {
         pathText.setText(relativePath(currentDirectory));
-        currentFolderCheck.setChecked(selectedFolders.contains(canonical(currentDirectory)));
+        applySelectionState(currentFolderCheck, currentDirectory);
         folderList.removeAllViews();
 
         File[] entries = currentDirectory.listFiles();
@@ -332,11 +299,13 @@ public final class PhotoFolderActivity extends Activity {
         row.setBackground(rounded(PANEL));
 
         final CheckBox check = new CheckBox(this);
-        check.setChecked(selectedFolders.contains(canonical(directory)));
+        applySelectionState(check, directory);
         check.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                setSelected(directory, check.isChecked());
+                // A grey tick means one or more descendants are selected.
+                // Tapping it promotes this directory to a full selection.
+                setSelected(directory, isPartiallySelected(directory) || check.isChecked());
             }
         });
         TextView name = text(directory.getName() + "   ›", 18, PRIMARY);
@@ -360,7 +329,26 @@ public final class PhotoFolderActivity extends Activity {
         } else {
             selectedFolders.remove(path);
         }
-        updateSelectionCount();
+        showDirectory();
+    }
+
+    private void applySelectionState(CheckBox check, File directory) {
+        boolean direct = selectedFolders.contains(canonical(directory));
+        boolean partial = !direct && isPartiallySelected(directory);
+        check.setChecked(direct || partial);
+        // Android 4.2 has no indeterminate CheckBox state.  A semi-transparent
+        // checked mark is an unambiguous, compatible partial-selection marker.
+        check.setAlpha(partial ? 0.45f : 1.0f);
+    }
+
+    private boolean isPartiallySelected(File directory) {
+        String prefix = canonical(directory) + File.separator;
+        for (String selected : selectedFolders) {
+            if (selected.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void updateSelectionCount() {
@@ -378,11 +366,6 @@ public final class PhotoFolderActivity extends Activity {
                 .putBoolean(CLOCK_BACKGROUND, backgroundCheck.isChecked())
                 .putInt(CLOCK_FONT_STYLE, fontSpinner.getSelectedItemPosition())
                 .putInt(PHOTO_INTERVAL_SECONDS, 10 + intervalSeek.getProgress() * 5)
-                .putBoolean(EFFECT_SOFT_BACKGROUND, softBackgroundCheck.isChecked())
-                .putBoolean(EFFECT_SMART_FOCUS, smartFocusCheck.isChecked())
-                .putBoolean(EFFECT_ADAPTIVE_COLOR, adaptiveColorCheck.isChecked())
-                .putBoolean(EFFECT_POLAROID_FRAME, polaroidFrameCheck.isChecked())
-                .putBoolean(EFFECT_3D_TRANSITION, transition3dCheck.isChecked())
                 .apply();
         setResult(RESULT_OK);
         finish();
@@ -449,17 +432,6 @@ public final class PhotoFolderActivity extends Activity {
             item.setPadding(dp(12), dp(6), dp(12), dp(6));
         }
         return view;
-    }
-
-    private CheckBox effectCheck(String label, boolean checked) {
-        CheckBox checkBox = new CheckBox(this);
-        checkBox.setText(label);
-        checkBox.setTextColor(PRIMARY);
-        checkBox.setTextSize(16);
-        checkBox.setChecked(checked);
-        checkBox.setPadding(dp(6), 0, dp(6), 0);
-        checkBox.setMinHeight(dp(38));
-        return checkBox;
     }
 
     private Button button(String label, int color) {
