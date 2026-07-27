@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod actions;
 mod adb;
@@ -42,6 +42,7 @@ fn main() {
             pages = changed;
             settings::save_pages(&pages);
         }
+
         let serial = match adb.single_device() {
             Ok(serial) => serial,
             Err(error) => {

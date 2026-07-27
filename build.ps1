@@ -55,17 +55,14 @@ $adbPath = $env:QUIETPANEL_ADB
 if ([string]::IsNullOrWhiteSpace($adbPath)) {
     $adbPath = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
 }
-if (-not (Test-Path -LiteralPath $adbPath)) {
-    throw 'adb.exe not found. Set QUIETPANEL_ADB to its full path.'
-}
-
-$adbDir = Split-Path -Parent $adbPath
-foreach ($file in @('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll')) {
-    $source = Join-Path $adbDir $file
-    if (-not (Test-Path -LiteralPath $source)) {
-        throw "Required ADB file not found: $source"
+if (Test-Path -LiteralPath $adbPath) {
+    $adbDir = Split-Path -Parent $adbPath
+    foreach ($file in @('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll')) {
+        $source = Join-Path $adbDir $file
+        if (Test-Path -LiteralPath $source) {
+            Copy-IfDifferent -Source $source -Destination (Join-Path $dist $file)
+        }
     }
-    Copy-IfDifferent -Source $source -Destination (Join-Path $dist $file)
 }
 
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\Start-QuietPanel.cmd') -Destination $dist -Force

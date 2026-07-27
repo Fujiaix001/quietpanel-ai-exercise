@@ -73,6 +73,8 @@ public final class MainActivity extends Activity
     private final DiskRow[] diskRows = new DiskRow[4];
     private TransportServer transport;
     private ApodServer apodServer;
+    private WifiBeacon wifiBeacon;
+    private android.net.wifi.WifiManager.WifiLock wifiLock;
     private LinearLayout appRoot;
     private LinearLayout appHeader;
     private SwipePager pager;
@@ -216,6 +218,20 @@ public final class MainActivity extends Activity
         transport.start();
         apodServer = new ApodServer(this);
         apodServer.start();
+
+        try {
+            android.net.wifi.WifiManager wifiManager =
+                    (android.net.wifi.WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wifiManager != null) {
+                wifiLock = wifiManager.createWifiLock(
+                        android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "QuietPanelWifiLock");
+                wifiLock.acquire();
+            }
+        } catch (Exception ignored) {
+        }
+
+        wifiBeacon = new WifiBeacon();
+        wifiBeacon.start();
     }
 
     @Override
@@ -239,6 +255,15 @@ public final class MainActivity extends Activity
     @Override
     protected void onDestroy() {
         stopPhotoSlideshow();
+        if (wifiBeacon != null) {
+            wifiBeacon.stop();
+        }
+        if (wifiLock != null && wifiLock.isHeld()) {
+            try {
+                wifiLock.release();
+            } catch (Exception ignored) {
+            }
+        }
         if (transport != null) {
             transport.stop();
         }
@@ -279,7 +304,7 @@ public final class MainActivity extends Activity
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                connectionText.setText(connected ? "USB LIVE  ·  " + detail : detail);
+                connectionText.setText(connected ? "WIFI LIVE  ·  " + detail : detail);
                 connectionText.setTextColor(connected ? ACCENT : SECONDARY);
                 setActionButtonsEnabled(connected);
                 if (!connected) {

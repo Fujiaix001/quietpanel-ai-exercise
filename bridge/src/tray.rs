@@ -3,26 +3,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::UI::Shell::{
-    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
-};
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    DispatchMessageW, GetCursorPos, GetMessageW, LoadIconW, PostQuitMessage, RegisterClassW,
-    SetForegroundWindow, TrackPopupMenu, TranslateMessage, IDI_APPLICATION, MF_CHECKED, MF_GRAYED,
-    MF_SEPARATOR, MF_STRING, MSG, TPM_LEFTALIGN, TPM_NONOTIFY, TPM_RETURNCMD, WM_APP, WM_COMMAND,
-    WM_DESTROY, WM_LBUTTONUP, WM_RBUTTONUP, WNDCLASSW,
-};
-
 use crate::settings::PAGE_COUNT;
 
-const TRAY_MESSAGE: u32 = WM_APP + 1;
-const TRAY_ID: u32 = 1;
-const FIRST_PAGE_COMMAND: u32 = 1001;
-const EXIT_COMMAND: u32 = 1099;
-const PAGE_LABELS: [&str; PAGE_COUNT] = [
+pub const PAGE_LABELS: [&str; PAGE_COUNT] = [
     "頁面 1：系統監控",
     "頁面 2：磁碟空間",
     "頁面 3：相簿時鐘",
@@ -39,24 +22,6 @@ struct TrayShared {
 
 static SHARED: OnceLock<TrayShared> = OnceLock::new();
 
-const CLASS_NAME: &[u16] = &[
-    b'Q' as u16,
-    b'u' as u16,
-    b'i' as u16,
-    b'e' as u16,
-    b't' as u16,
-    b'P' as u16,
-    b'a' as u16,
-    b'n' as u16,
-    b'e' as u16,
-    b'l' as u16,
-    b'T' as u16,
-    b'r' as u16,
-    b'a' as u16,
-    b'y' as u16,
-    0,
-];
-
 pub struct TrayController {
     receiver: Receiver<[bool; PAGE_COUNT]>,
     running: Arc<AtomicBool>,
@@ -66,12 +31,19 @@ impl TrayController {
     pub fn start(pages: [bool; PAGE_COUNT]) -> Self {
         let (sender, receiver) = mpsc::channel();
         let running = Arc::new(AtomicBool::new(true));
-        let _ = SHARED.set(TrayShared {
+        let shared = TrayShared {
             pages: Mutex::new(pages),
             sender,
             running: Arc::clone(&running),
-        });
-        thread::spawn(|| unsafe { tray_loop() });
+        };
+        let _ = SHARED.set(shared);
+
+        #[cfg(windows)]
+        thread::spawn(|| unsafe { win_tray_loop() });
+
+        #[cfg(not(windows))]
+        thread::spawn(|| linux_tray_loop());
+
         Self { receiver, running }
     }
 
@@ -88,30 +60,73 @@ impl TrayController {
     }
 }
 
+fn toggle_page(index: usize) {
+    let Some(shared) = SHARED.get() else {
+        return;
+    };
+    let Ok(mut pages) = shared.pages.lock() else {
+        return;
+    };
+    if pages[index] && pages.iter().filter(|enabled| **enabled).count() == 1 {
+        return;
+    }
+    pages[index] = !pages[index];
+    let changed = *pages;
+    drop(pages);
+    let _ = shared.sender.send(changed);
+}
+
+#[cfg(windows)]
+const TRAY_MESSAGE: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
+#[cfg(windows)]
+const TRAY_ID: u32 = 1;
+#[cfg(windows)]
+const FIRST_PAGE_COMMAND: u32 = 1001;
+#[cfg(windows)]
+const EXIT_COMMAND: u32 = 1099;
+
+#[cfg(windows)]
+const CLASS_NAME: &[u16] = &[
+    b'Q' as u16, b'u' as u16, b'i' as u16, b'e' as u16, b't' as u16, b'P' as u16,
+    b'a' as u16, b'n' as u16, b'e' as u16, b'l' as u16, b'T' as u16, b'r' as u16,
+    b'a' as u16, b'y' as u16, 0,
+];
+
+#[cfg(windows)]
 unsafe extern "system" fn window_proc(
-    hwnd: HWND,
+    hwnd: windows_sys::Win32::Foundation::HWND,
     message: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+) -> windows_sys::Win32::Foundation::LRESULT {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        DefWindowProcW, PostQuitMessage, WM_COMMAND, WM_DESTROY, WM_LBUTTONUP, WM_RBUTTONUP,
+    };
+
     if message == TRAY_MESSAGE {
         let mouse_message = lparam as u32;
         if mouse_message == WM_RBUTTONUP || mouse_message == WM_LBUTTONUP {
-            show_menu(hwnd);
+            show_win_menu(hwnd);
             return 0;
         }
     } else if message == WM_COMMAND {
-        handle_command((wparam & 0xffff) as u32, hwnd);
+        handle_win_command((wparam & 0xffff) as u32, hwnd);
         return 0;
     } else if message == WM_DESTROY {
-        remove_icon(hwnd);
+        remove_win_icon(hwnd);
         PostQuitMessage(0);
         return 0;
     }
     DefWindowProcW(hwnd, message, wparam, lparam)
 }
 
-unsafe fn tray_loop() {
+#[cfg(windows)]
+unsafe fn win_tray_loop() {
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DispatchMessageW, GetMessageW, RegisterClassW, TranslateMessage, MSG, WNDCLASSW,
+    };
+
     let instance = GetModuleHandleW(std::ptr::null());
     let mut window_class: WNDCLASSW = std::mem::zeroed();
     window_class.lpfnWndProc = Some(window_proc);
@@ -138,7 +153,7 @@ unsafe fn tray_loop() {
     if window.is_null() {
         return;
     }
-    add_icon(window);
+    add_win_icon(window);
 
     let mut message: MSG = std::mem::zeroed();
     while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
@@ -147,7 +162,13 @@ unsafe fn tray_loop() {
     }
 }
 
-unsafe fn add_icon(hwnd: HWND) {
+#[cfg(windows)]
+unsafe fn add_win_icon(hwnd: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::Shell::{
+        Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NOTIFYICONDATAW,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{LoadIconW, IDI_APPLICATION};
+
     let mut icon = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
         hWnd: hwnd,
@@ -161,7 +182,10 @@ unsafe fn add_icon(hwnd: HWND) {
     Shell_NotifyIconW(NIM_ADD, &icon);
 }
 
-unsafe fn remove_icon(hwnd: HWND) {
+#[cfg(windows)]
+unsafe fn remove_win_icon(hwnd: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::Shell::{Shell_NotifyIconW, NIM_DELETE, NOTIFYICONDATAW};
+
     let icon = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
         hWnd: hwnd,
@@ -171,7 +195,15 @@ unsafe fn remove_icon(hwnd: HWND) {
     Shell_NotifyIconW(NIM_DELETE, &icon);
 }
 
-unsafe fn show_menu(hwnd: HWND) {
+#[cfg(windows)]
+unsafe fn show_win_menu(hwnd: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, SetForegroundWindow,
+        TrackPopupMenu, MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, TPM_LEFTALIGN,
+        TPM_NONOTIFY, TPM_RETURNCMD,
+    };
+
     let menu = CreatePopupMenu();
     if menu.is_null() {
         return;
@@ -213,10 +245,13 @@ unsafe fn show_menu(hwnd: HWND) {
     ) as u32;
     DestroyMenu(menu);
 
-    handle_command(command, hwnd);
+    handle_win_command(command, hwnd);
 }
 
-unsafe fn handle_command(command: u32, hwnd: HWND) {
+#[cfg(windows)]
+unsafe fn handle_win_command(command: u32, hwnd: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow;
+
     if (FIRST_PAGE_COMMAND..FIRST_PAGE_COMMAND + PAGE_COUNT as u32).contains(&command) {
         toggle_page((command - FIRST_PAGE_COMMAND) as usize);
     } else if command == EXIT_COMMAND {
@@ -227,20 +262,103 @@ unsafe fn handle_command(command: u32, hwnd: HWND) {
     }
 }
 
-fn toggle_page(index: usize) {
-    let Some(shared) = SHARED.get() else {
-        return;
-    };
-    let Ok(mut pages) = shared.pages.lock() else {
-        return;
-    };
-    if pages[index] && pages.iter().filter(|enabled| **enabled).count() == 1 {
-        return;
+#[cfg(windows)]
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn copy_utf16(target: &mut [u16], text: &str) {
+    let limit = target.len().saturating_sub(1);
+    for (destination, value) in target.iter_mut().take(limit).zip(text.encode_utf16()) {
+        *destination = value;
     }
-    pages[index] = !pages[index];
-    let changed = *pages;
-    drop(pages);
-    let _ = shared.sender.send(changed);
+}
+
+#[cfg(not(windows))]
+struct LinuxTray;
+
+#[cfg(not(windows))]
+impl ksni::Tray for LinuxTray {
+    fn id(&self) -> String {
+        "quietpanel-bridge".into()
+    }
+
+    fn icon_name(&self) -> String {
+        "computer".into()
+    }
+
+    fn title(&self) -> String {
+        "QuietPanel Bridge".into()
+    }
+
+    fn category(&self) -> ksni::Category {
+        ksni::Category::ApplicationStatus
+    }
+
+    fn menu(&self) -> Vec<ksni::menu::MenuItem<Self>> {
+        use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
+
+        let pages = SHARED
+            .get()
+            .and_then(|shared| shared.pages.lock().ok().map(|p| *p))
+            .unwrap_or([true; PAGE_COUNT]);
+
+        let mut items = vec![
+            MenuItem::Standard(StandardItem {
+                label: "QuietPanel Bridge 正在執行".into(),
+                enabled: false,
+                ..Default::default()
+            }),
+            MenuItem::Separator,
+        ];
+
+        for (i, label) in PAGE_LABELS.iter().enumerate() {
+            let checked = pages[i];
+            let idx = i;
+            items.push(MenuItem::Checkmark(CheckmarkItem {
+                label: label.to_string(),
+                checked,
+                activate: Box::new(move |_| {
+                    toggle_page(idx);
+                }),
+                ..Default::default()
+            }));
+        }
+
+        items.push(MenuItem::Separator);
+        items.push(MenuItem::Standard(StandardItem {
+            label: "結束 Bridge".into(),
+            activate: Box::new(|_| {
+                if let Some(shared) = SHARED.get() {
+                    shared.running.store(false, Ordering::Relaxed);
+                }
+            }),
+            ..Default::default()
+        }));
+
+        items
+    }
+}
+
+#[cfg(not(windows))]
+fn linux_tray_loop() {
+    use ksni::blocking::TrayMethods;
+    let handle = match LinuxTray.spawn() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("Failed to spawn Linux tray icon: {e}");
+            return;
+        }
+    };
+    while SHARED
+        .get()
+        .map(|s| s.running.load(Ordering::Relaxed))
+        .unwrap_or(false)
+    {
+        thread::sleep(std::time::Duration::from_millis(500));
+        handle.update(|_| {});
+    }
 }
 
 #[cfg(test)]
@@ -249,17 +367,6 @@ fn toggle_for_test(mut pages: [bool; PAGE_COUNT], index: usize) -> [bool; PAGE_C
         pages[index] = !pages[index];
     }
     pages
-}
-
-fn wide(text: &str) -> Vec<u16> {
-    text.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
-fn copy_utf16(target: &mut [u16], text: &str) {
-    let limit = target.len().saturating_sub(1);
-    for (destination, value) in target.iter_mut().take(limit).zip(text.encode_utf16()) {
-        *destination = value;
-    }
 }
 
 #[cfg(test)]

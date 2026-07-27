@@ -65,7 +65,7 @@ public final class ApodServer {
         try {
             ServerSocket server = new ServerSocket();
             server.setReuseAddress(true);
-            server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), PORT), 1);
+            server.bind(new InetSocketAddress(PORT), 5);
             synchronized (this) {
                 if (!running) {
                     closeQuietly(server);

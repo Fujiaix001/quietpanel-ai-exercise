@@ -1,7 +1,7 @@
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -135,7 +135,7 @@ fn required_text<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
 }
 
 fn push_to_android(payload: &Payload) -> io::Result<()> {
-    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), APOD_PORT);
+    let address = SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), APOD_PORT);
     let mut last_error = None;
 
     for _ in 0..CONNECT_RETRIES {
