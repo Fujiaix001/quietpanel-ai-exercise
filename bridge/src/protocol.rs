@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-pub const VERSION: &str = "8.0.0";
+pub const VERSION: &str = "6.9.1";
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ActionRequest {
