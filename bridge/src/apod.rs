@@ -1,7 +1,7 @@
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -20,10 +20,10 @@ struct Payload {
     image: Vec<u8>,
 }
 
-pub fn deliver() {
+pub fn deliver(phone_ip: IpAddr) {
     match load_or_refresh() {
-        Ok(payload) => match push_to_android(&payload) {
-            Ok(()) => println!("NASA APOD delivered to Android through USB ADB"),
+        Ok(payload) => match push_to_android(phone_ip, &payload) {
+            Ok(()) => println!("NASA APOD delivered to Android ({phone_ip})"),
             Err(error) => eprintln!("NASA APOD delivery skipped: {error}"),
         },
         Err(error) => eprintln!("NASA APOD unavailable: {error}"),
@@ -140,8 +140,8 @@ fn required_text<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("NASA response is missing {field}"))
 }
 
-fn push_to_android(payload: &Payload) -> io::Result<()> {
-    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), APOD_PORT);
+fn push_to_android(phone_ip: IpAddr, payload: &Payload) -> io::Result<()> {
+    let address = SocketAddr::new(phone_ip, APOD_PORT);
     let mut last_error = None;
 
     for _ in 0..CONNECT_RETRIES {

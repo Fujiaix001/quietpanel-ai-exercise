@@ -34,6 +34,10 @@ pub fn page_config(pages: &[bool]) -> Value {
     json!({ "v": 1, "type": "page_config", "enabled": enabled })
 }
 
+pub fn weather_state(weather: Value) -> Value {
+    json!({ "v": 1, "type": "weather_state", "weather": weather })
+}
+
 pub fn action_result(id: u64, ok: bool, message: &str) -> Value {
     json!({
         "v": 1,
@@ -73,7 +77,7 @@ pub fn parse_action(line: &str) -> Result<Option<ActionRequest>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{page_config, parse_action, ActionRequest};
+    use super::{page_config, parse_action, weather_state, ActionRequest};
 
     #[test]
     fn parses_action_message() {
@@ -97,5 +101,12 @@ mod tests {
             page_config(&[true, false, true]),
             serde_json::json!({"v":1,"type":"page_config","enabled":[0,2]})
         );
+    }
+
+    #[test]
+    fn builds_weather_state() {
+        let value = weather_state(serde_json::json!({"temperature_c": 28.0}));
+        assert_eq!(value["type"], "weather_state");
+        assert_eq!(value["weather"]["temperature_c"], 28.0);
     }
 }

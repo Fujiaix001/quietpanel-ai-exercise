@@ -18,6 +18,6 @@ if errorlevel 1 (
 
 adb.exe shell am start -n com.quietpanel.client/.MainActivity
 echo.
-echo QuietPanel Android v6 installed and started.
+echo QuietPanel Android installed and started.
 pause
 

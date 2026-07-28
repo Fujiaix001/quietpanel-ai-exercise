@@ -46,7 +46,8 @@ import java.util.Locale;
 import java.util.Set;
 
 public final class MainActivity extends Activity
-        implements TransportServer.Listener, ApodServer.Listener {
+        implements TransportServer.Listener, ApodServer.Listener,
+        ClockEnvironmentController.Listener {
     private static final int BACKGROUND = Color.rgb(11, 15, 20);
     private static final int PANEL = Color.rgb(24, 31, 40);
     private static final int PRIMARY = Color.rgb(242, 238, 230);
@@ -75,6 +76,8 @@ public final class MainActivity extends Activity
     private final DiskRow[] diskRows = new DiskRow[4];
     private TransportServer transport;
     private ApodServer apodServer;
+    private ClockEnvironmentController clockEnvironment;
+    private TextView modePillButton;
     private LinearLayout appRoot;
     private LinearLayout appHeader;
     private SwipePager pager;
@@ -100,6 +103,13 @@ public final class MainActivity extends Activity
     private TextView photoStatus;
     private TextView photoTime;
     private TextView photoDate;
+    private LinearLayout weatherRow;
+    private WeatherIconView weatherIcon;
+    private TextView weatherTemperature;
+    private TextView weatherLocation;
+    private LinearLayout alarmRow;
+    private AlarmIconView alarmIcon;
+    private TextView alarmTimeText;
     private Button photoSettingsButton;
     private LinearLayout clockPanel;
     private FrameLayout photoContentContainer;
@@ -133,6 +143,7 @@ public final class MainActivity extends Activity
     private int clockFontStyle = PhotoFontManager.STYLE_STOROPIA;
     private View.OnTouchListener clockTouchListener;
     private boolean clockBackgroundEnabled = true;
+    private boolean lowPowerEnabled;
     private boolean softBackgroundEnabled;
     private boolean smartFocusEnabled;
     private boolean adaptiveColorEnabled;
@@ -179,6 +190,10 @@ public final class MainActivity extends Activity
                 return;
             }
             updatePhotoClock();
+            if (clockEnvironment != null && clockEnvironment.isSleeping()) {
+                schedulePhotoTicker();
+                return;
+            }
             if (!photoLoading && !photoFiles.isEmpty()
                     && SystemClock.elapsedRealtime() >= nextPhotoAt) {
                 loadNextPhoto();
@@ -190,7 +205,10 @@ public final class MainActivity extends Activity
     private final Runnable photoPanTicker = new Runnable() {
         @Override
         public void run() {
-            if (!activityResumed || !pcDisplayOn || (currentPage != PHOTO_PAGE && currentPage != WORK_PHOTO_PAGE) || photoBitmap == null) {
+            if (!activityResumed || !pcDisplayOn || lowPowerEnabled
+                    || (clockEnvironment != null && clockEnvironment.isSleeping())
+                    || (currentPage != PHOTO_PAGE && currentPage != WORK_PHOTO_PAGE)
+                    || photoBitmap == null) {
                 return;
             }
             long elapsed = SystemClock.elapsedRealtime() - photoPanStartedAt;
@@ -212,6 +230,7 @@ public final class MainActivity extends Activity
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        requestModernRuntimePermissions();
         updateScreenKeepAwake();
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
@@ -221,10 +240,32 @@ public final class MainActivity extends Activity
         setActionButtonsEnabled(false);
         loadApodCache();
 
-        transport = new TransportServer(this);
+        int savedMode = getSharedPreferences("quietpanel_prefs", MODE_PRIVATE)
+                .getInt("transport_mode", TransportServer.MODE_ADB);
+        transport = new TransportServer(this, this);
+        transport.setMode(savedMode);
         transport.start();
+        updateModePillText(savedMode);
         apodServer = new ApodServer(this);
         apodServer.start();
+        clockEnvironment = new ClockEnvironmentController(this, clockPanel, this);
+    }
+
+    private void requestModernRuntimePermissions() {
+        ArrayList<String> permissions = new ArrayList<String>();
+        if (android.os.Build.VERSION.SDK_INT >= 31
+                && checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            permissions.add(android.Manifest.permission.BLUETOOTH_CONNECT);
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS);
+        }
+        if (!permissions.isEmpty()) {
+            requestPermissions(permissions.toArray(new String[permissions.size()]), 4101);
+        }
     }
 
     @Override
@@ -232,6 +273,9 @@ public final class MainActivity extends Activity
         super.onResume();
         activityResumed = true;
         applyPhotoSettings();
+        if (clockEnvironment != null) {
+            clockEnvironment.start();
+        }
         if (pcDisplayOn && (currentPage == PHOTO_PAGE || currentPage == WORK_PHOTO_PAGE)) {
             hidePhotoFolderButtonImmediately();
             startPhotoSlideshow();
@@ -241,6 +285,9 @@ public final class MainActivity extends Activity
     @Override
     protected void onPause() {
         activityResumed = false;
+        if (clockEnvironment != null) {
+            clockEnvironment.stop();
+        }
         stopPhotoSlideshow();
         super.onPause();
     }
@@ -253,6 +300,9 @@ public final class MainActivity extends Activity
         }
         if (apodServer != null) {
             apodServer.stop();
+        }
+        if (clockEnvironment != null) {
+            clockEnvironment.stop();
         }
         if (apodImage != null) {
             apodImage.setImageDrawable(null);
@@ -284,11 +334,20 @@ public final class MainActivity extends Activity
     }
 
     @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (event != null && event.getActionMasked() == MotionEvent.ACTION_DOWN
+                && clockEnvironment != null) {
+            clockEnvironment.onUserTouch();
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    @Override
     public void onConnectionChanged(final boolean connected, final String detail) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                connectionText.setText(connected ? "USB LIVE  ·  " + detail : detail);
+                connectionText.setText(connected ? "LIVE  ·  " + detail : detail);
                 connectionText.setTextColor(connected ? ACCENT : SECONDARY);
                 setActionButtonsEnabled(connected);
                 if (!connected) {
@@ -342,6 +401,37 @@ public final class MainActivity extends Activity
     }
 
     @Override
+    public void onWeatherReceived(final JSONObject weather) {
+        if (weather == null) {
+            return;
+        }
+        getSharedPreferences(PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
+                .edit().putString("weather_cache", weather.toString()).apply();
+        runOnUiThread(new Runnable() {
+            @Override public void run() { applyWeather(weather); }
+        });
+    }
+
+    @Override
+    public void onNightSleepChanged(final boolean sleeping) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (sleeping) {
+                    stopPhotoPan();
+                    photoHandler.removeCallbacks(photoTicker);
+                } else if (activityResumed && pcDisplayOn
+                        && (currentPage == PHOTO_PAGE || currentPage == WORK_PHOTO_PAGE)) {
+                    schedulePhotoTicker();
+                    if (!lowPowerEnabled && photoBitmap != null) {
+                        startPhotoPan();
+                    }
+                }
+            }
+        });
+    }
+
+    @Override
     public void onApodReceived(final JSONObject metadata, final byte[] imageBytes) {
         final String date = metadata.optString("date", "");
         if (date.equals(displayedApodDate) && apodBitmap != null) {
@@ -382,8 +472,25 @@ public final class MainActivity extends Activity
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = makeText("QUIETPANEL  v" + BuildConfig.VERSION_NAME, 22, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        modePillButton = makeText("AUTO", 12, Color.WHITE, Gravity.CENTER);
+        modePillButton.setPadding(dp(8), dp(4), dp(8), dp(4));
+        modePillButton.setBackground(rounded(Color.argb(125, 20, 30, 45)));
+        modePillButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (transport == null) return;
+                int next = (transport.getMode() + 1) % 4;
+                getSharedPreferences("quietpanel_prefs", MODE_PRIVATE)
+                        .edit().putInt("transport_mode", next).apply();
+                transport.setMode(next);
+                updateModePillText(next);
+            }
+        });
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
         appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(dp(72), dp(32));
+        modeParams.setMargins(0, 0, dp(10), 0);
+        appHeader.addView(modePillButton, modeParams);
         appHeader.addView(connectionText, new LinearLayout.LayoutParams(0, dp(54), 1));
         appRoot.addView(appHeader, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
@@ -577,6 +684,33 @@ public final class MainActivity extends Activity
         photoDate.setIncludeFontPadding(false);
         photoDate.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
         clockPanel.addView(photoDate, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        weatherRow = new LinearLayout(this);
+        weatherRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        weatherIcon = new WeatherIconView(this);
+        weatherTemperature = makeText("", 20, Color.WHITE, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        weatherLocation = makeText("", 14, Color.WHITE, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        weatherRow.addView(weatherIcon, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        weatherRow.addView(weatherTemperature, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)));
+        LinearLayout.LayoutParams locationParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(34));
+        locationParams.setMargins(dp(8), 0, 0, 0);
+        weatherRow.addView(weatherLocation, locationParams);
+        clockPanel.addView(weatherRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        alarmRow = new LinearLayout(this);
+        alarmRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        alarmIcon = new AlarmIconView(this);
+        alarmTimeText = makeText("", 16, Color.WHITE, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        alarmRow.addView(alarmIcon, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        alarmRow.addView(alarmTimeText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(28)));
+        clockPanel.addView(alarmRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -1107,10 +1241,13 @@ public final class MainActivity extends Activity
                 PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
         int maxLeft = Math.max(0, photoContentContainer.getWidth() - clockPanel.getWidth());
         int maxTop = Math.max(0, photoContentContainer.getHeight() - clockPanel.getHeight());
-        float xRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_X_RATIO, 1.0f);
-        float yRatio = preferences.getFloat(PhotoFolderActivity.CLOCK_Y_RATIO, 1.0f);
+        float xRatio = preferences.getFloat(clockOrientationKey(PhotoFolderActivity.CLOCK_X_RATIO),
+                preferences.getFloat(PhotoFolderActivity.CLOCK_X_RATIO, 1.0f));
+        float yRatio = preferences.getFloat(clockOrientationKey(PhotoFolderActivity.CLOCK_Y_RATIO),
+                preferences.getFloat(PhotoFolderActivity.CLOCK_Y_RATIO, 1.0f));
         boolean positionCustomized = preferences.getBoolean(
-                PhotoFolderActivity.CLOCK_POSITION_CUSTOMIZED, false);
+                clockOrientationKey(PhotoFolderActivity.CLOCK_POSITION_CUSTOMIZED),
+                preferences.getBoolean(PhotoFolderActivity.CLOCK_POSITION_CUSTOMIZED, false));
         if (!positionCustomized) {
             moveClockPanel(maxLeft - dp(12), maxTop - dp(12));
             return;
@@ -1127,12 +1264,18 @@ public final class MainActivity extends Activity
         int maxTop = Math.max(1, photoContentContainer.getHeight() - clockPanel.getHeight());
         getSharedPreferences(PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
                 .edit()
-                .putFloat(PhotoFolderActivity.CLOCK_X_RATIO,
+                .putFloat(clockOrientationKey(PhotoFolderActivity.CLOCK_X_RATIO),
                         clampRatio((float) clockPanel.getLeft() / maxLeft))
-                .putFloat(PhotoFolderActivity.CLOCK_Y_RATIO,
+                .putFloat(clockOrientationKey(PhotoFolderActivity.CLOCK_Y_RATIO),
                         clampRatio((float) clockPanel.getTop() / maxTop))
-                .putBoolean(PhotoFolderActivity.CLOCK_POSITION_CUSTOMIZED, true)
+                .putBoolean(clockOrientationKey(PhotoFolderActivity.CLOCK_POSITION_CUSTOMIZED), true)
                 .apply();
+    }
+
+    private String clockOrientationKey(String base) {
+        int orientation = getResources().getConfiguration().orientation;
+        return base + (orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
+                ? "_portrait" : "_landscape");
     }
 
     private float clampRatio(float value) {
@@ -1147,6 +1290,8 @@ public final class MainActivity extends Activity
                 PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
         clockBackgroundEnabled = preferences.getBoolean(
                 PhotoFolderActivity.CLOCK_BACKGROUND, true);
+        lowPowerEnabled = preferences.getBoolean(
+                PhotoFolderActivity.LOW_POWER_ENABLED, false);
         clockFontStyle = PhotoFontManager.normalize(preferences.getInt(
                 PhotoFolderActivity.CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA));
         // This ADB edition deliberately omits optional image effects. Reset
@@ -1160,6 +1305,25 @@ public final class MainActivity extends Activity
 
         applyClockBackground();
         applyClockFontStyle();
+        if (photoTime != null) {
+            photoTime.setVisibility(preferences.getBoolean(
+                    PhotoFolderActivity.CLOCK_TIME_ENABLED, true) ? View.VISIBLE : View.GONE);
+        }
+        if (photoDate != null) {
+            photoDate.setVisibility(preferences.getBoolean(
+                    PhotoFolderActivity.CLOCK_DATE_ENABLED, true) ? View.VISIBLE : View.GONE);
+        }
+        updateAlarmIndicator();
+        String weatherText = preferences.getString("weather_cache", "");
+        if (weatherText != null && weatherText.length() > 0) {
+            try {
+                applyWeather(new JSONObject(weatherText));
+            } catch (Exception ignored) {
+                hideWeather();
+            }
+        } else {
+            hideWeather();
+        }
         applyPolaroidFrame();
         if (photoBitmap != null) {
             applyPhotoPresentation(photoBitmap);
@@ -1281,6 +1445,15 @@ public final class MainActivity extends Activity
         }
         if (photoDate != null) {
             photoDate.setTextSize(PHOTO_DATE_TEXT_SIZE_SP * displayScale);
+        }
+        if (weatherTemperature != null) {
+            weatherTemperature.setTextSize(20.0f * displayScale);
+        }
+        if (weatherLocation != null) {
+            weatherLocation.setTextSize(14.0f * displayScale);
+        }
+        if (alarmTimeText != null) {
+            alarmTimeText.setTextSize(16.0f * displayScale);
         }
     }
 
@@ -1515,7 +1688,8 @@ public final class MainActivity extends Activity
 
     private void startPhotoPan() {
         photoHandler.removeCallbacks(photoPanTicker);
-        if (softBackgroundEnabled || photoImage == null || photoBitmap == null
+        if (lowPowerEnabled || (clockEnvironment != null && clockEnvironment.isSleeping())
+                || softBackgroundEnabled || photoImage == null || photoBitmap == null
                 || photoImage.getWidth() <= 0 || photoImage.getHeight() <= 0) {
             return;
         }
@@ -1582,6 +1756,59 @@ public final class MainActivity extends Activity
             SimpleDateFormat format = PhotoFontManager.usesEnglishDate(clockFontStyle)
                     ? photoDateEnglishFormat : photoDateChineseFormat;
             photoDate.setText(format.format(photoClockDate));
+        }
+    }
+
+    private void applyWeather(JSONObject weather) {
+        if (weatherRow == null) return;
+        android.content.SharedPreferences preferences = getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
+        if (!preferences.getBoolean(PhotoFolderActivity.WEATHER_ENABLED, true)
+                || weather.optBoolean("stale", false)) {
+            hideWeather();
+            return;
+        }
+        double temperature = weather.optDouble("temperature_c", Double.NaN);
+        if (Double.isNaN(temperature)) {
+            hideWeather();
+            return;
+        }
+        weatherIcon.setWeather(weather.optInt("code", 0), weather.optBoolean("is_day", true));
+        weatherTemperature.setText(String.format(Locale.US, "%.0f°C", temperature));
+        boolean showLocation = preferences.getBoolean(
+                PhotoFolderActivity.WEATHER_SHOW_LOCATION, false);
+        weatherLocation.setText(showLocation ? weather.optString("location", "") : "");
+        weatherLocation.setVisibility(showLocation ? View.VISIBLE : View.GONE);
+        weatherRow.setVisibility(View.VISIBLE);
+    }
+
+    private void hideWeather() {
+        if (weatherRow != null) {
+            weatherRow.setVisibility(View.GONE);
+        }
+    }
+
+    private void updateAlarmIndicator() {
+        if (alarmRow == null) return;
+        String nextAlarm = AlarmHelper.getNextAlarmTimeString(this);
+        if (nextAlarm == null) {
+            alarmRow.setVisibility(View.GONE);
+        } else {
+            alarmTimeText.setText(nextAlarm);
+            alarmRow.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void updateModePillText(int mode) {
+        if (modePillButton == null) return;
+        if (mode == TransportServer.MODE_ADB) {
+            modePillButton.setText("ADB");
+        } else if (mode == TransportServer.MODE_WIFI) {
+            modePillButton.setText("WiFi");
+        } else if (mode == TransportServer.MODE_BT) {
+            modePillButton.setText("BT");
+        } else {
+            modePillButton.setText("AUTO");
         }
     }
 
@@ -1855,8 +2082,13 @@ public final class MainActivity extends Activity
             applySoftBackground(bitmap);
         } else {
             releaseSoftBackground();
-            photoImage.setScaleType(ImageView.ScaleType.MATRIX);
-            startPhotoPan();
+            if (lowPowerEnabled) {
+                stopPhotoPan();
+                photoImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            } else {
+                photoImage.setScaleType(ImageView.ScaleType.MATRIX);
+                startPhotoPan();
+            }
         }
     }
 

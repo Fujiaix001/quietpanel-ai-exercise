@@ -1,5 +1,7 @@
 package com.quietpanel.client;
 
+import android.content.Context;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -12,10 +14,13 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * The server is reachable only through the local port created by ADB forward.
- */
+/** One protocol server shared by ADB port-forward, Wi-Fi and Bluetooth PAN. */
 public final class TransportServer {
+    public static final int MODE_AUTO = 0;
+    public static final int MODE_WIFI = 1;
+    public static final int MODE_BT = 2;
+    public static final int MODE_ADB = 3;
+
     private static final int PORT = 27183;
 
     public interface Listener {
@@ -24,19 +29,39 @@ public final class TransportServer {
         void onActionResult(long id, boolean ok, String message);
         void onDisplayStateChanged(boolean displayOn);
         void onPageConfigReceived(JSONArray enabledPages);
+        void onWeatherReceived(JSONObject weather);
     }
 
     private final Listener listener;
+    private final WifiBeacon beacon = new WifiBeacon();
+    private final BluetoothPanController panController;
     private final AtomicLong nextActionId = new AtomicLong(1);
     private volatile boolean running;
+    private volatile int connectionMode = MODE_AUTO;
 
     private Thread serverThread;
     private ServerSocket serverSocket;
     private Socket activeClientSocket;
     private BufferedWriter writer;
 
-    public TransportServer(Listener listener) {
+    public TransportServer(Context context, Listener listener) {
         this.listener = listener;
+        this.panController = new BluetoothPanController(context);
+    }
+
+    public synchronized void setMode(int mode) {
+        if (mode < MODE_AUTO || mode > MODE_ADB) {
+            mode = MODE_AUTO;
+        }
+        connectionMode = mode;
+        if (running) {
+            stop();
+            start();
+        }
+    }
+
+    public int getMode() {
+        return connectionMode;
     }
 
     public synchronized void start() {
@@ -45,17 +70,25 @@ public final class TransportServer {
         }
 
         running = true;
+        if (connectionMode != MODE_ADB) {
+            beacon.start();
+        }
+        if (connectionMode == MODE_AUTO || connectionMode == MODE_BT) {
+            panController.requestTetheringEnabled();
+        }
         serverThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 runIpServer();
             }
-        }, "quietpanel-adb-server");
+        }, "quietpanel-transport-server");
         serverThread.start();
     }
 
     public synchronized void stop() {
         running = false;
+        beacon.stop();
+        panController.close();
         closeQuietly(serverSocket);
         serverSocket = null;
         closeQuietly(activeClientSocket);
@@ -90,7 +123,11 @@ public final class TransportServer {
                 synchronized (this) {
                     serverSocket = new ServerSocket();
                     serverSocket.setReuseAddress(true);
-                    serverSocket.bind(new InetSocketAddress("127.0.0.1", PORT));
+                    if (connectionMode == MODE_ADB) {
+                        serverSocket.bind(new InetSocketAddress("127.0.0.1", PORT));
+                    } else {
+                        serverSocket.bind(new InetSocketAddress(PORT));
+                    }
                 }
                 notifyConnection(false, waitingMessage());
 
@@ -120,11 +157,13 @@ public final class TransportServer {
                         writer = newWriter;
                     }
 
-                    handleStreamSession(reader, socket, "ADB 連線");
+                    String transportName = socket.getInetAddress().isLoopbackAddress()
+                            ? "ADB 連線" : "IP 連線";
+                    handleStreamSession(reader, socket, transportName);
                 }
             } catch (Exception error) {
                 if (running) {
-                    notifyConnection(false, "ADB 服務異常：" + safeMessage(error));
+                    notifyConnection(false, "通訊服務異常：" + safeMessage(error));
                     try {
                         Thread.sleep(2000);
                     } catch (InterruptedException ignored) {
@@ -140,7 +179,16 @@ public final class TransportServer {
     }
 
     private String waitingMessage() {
-        return "等待 USB ADB 連線…";
+        if (connectionMode == MODE_ADB) {
+            return "等待 USB ADB 連線…";
+        }
+        if (connectionMode == MODE_WIFI) {
+            return "等待 Wi-Fi 連線 (TCP " + PORT + ")…";
+        }
+        if (connectionMode == MODE_BT) {
+            return "等待藍牙 PAN 連線 (TCP " + PORT + ")…";
+        }
+        return "等待 ADB / Wi-Fi / 藍牙 PAN…";
     }
 
     private void handleStreamSession(BufferedReader reader, Socket clientSocket,
@@ -189,6 +237,8 @@ public final class TransportServer {
                 listener.onDisplayStateChanged(message.optBoolean("on", true));
             } else if ("page_config".equals(type)) {
                 listener.onPageConfigReceived(message.optJSONArray("enabled"));
+            } else if ("weather_state".equals(type)) {
+                listener.onWeatherReceived(message.optJSONObject("weather"));
             } else if ("state".equals(type)) {
                 listener.onStateReceived(
                         message.optJSONObject("system"),

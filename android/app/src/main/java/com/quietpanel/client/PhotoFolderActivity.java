@@ -2,6 +2,8 @@ package com.quietpanel.client;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.TimePickerDialog;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ClipDrawable;
@@ -23,6 +25,7 @@ import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.TimePicker;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -43,6 +46,16 @@ public final class PhotoFolderActivity extends Activity {
     public static final String CLOCK_X_RATIO = "clock_x_ratio";
     public static final String CLOCK_Y_RATIO = "clock_y_ratio";
     public static final String CLOCK_POSITION_CUSTOMIZED = "clock_position_customized";
+    public static final String CLOCK_TIME_ENABLED = "clock_time_enabled";
+    public static final String CLOCK_DATE_ENABLED = "clock_date_enabled";
+    public static final String NIGHT_MODE_ENABLED = "night_mode_enabled";
+    public static final String NIGHT_START_HOUR = "night_start_hour";
+    public static final String NIGHT_END_HOUR = "night_end_hour";
+    public static final String AMBIENT_BRIGHTNESS_ENABLED = "ambient_brightness_enabled";
+    public static final String BURN_IN_ENABLED = "burn_in_enabled";
+    public static final String LOW_POWER_ENABLED = "low_power_enabled";
+    public static final String WEATHER_ENABLED = "weather_enabled";
+    public static final String WEATHER_SHOW_LOCATION = "weather_show_location";
 
     private static final int BACKGROUND = Color.rgb(11, 15, 20);
     private static final int PANEL = Color.rgb(24, 31, 40);
@@ -58,6 +71,23 @@ public final class PhotoFolderActivity extends Activity {
     private CheckBox currentFolderCheck;
     private LinearLayout folderList;
     private CheckBox backgroundCheck;
+    private CheckBox timeCheck;
+    private CheckBox dateCheck;
+    private CheckBox nightCheck;
+    private CheckBox ambientCheck;
+    private CheckBox burnInCheck;
+    private CheckBox lowPowerCheck;
+    private CheckBox weatherCheck;
+    private CheckBox weatherLocationCheck;
+    private CheckBox alarmCheck;
+    private CheckBox alarmRepeatCheck;
+    private Button nightStartButton;
+    private Button nightEndButton;
+    private Button alarmTimeButton;
+    private int nightStartHour;
+    private int nightEndHour;
+    private int alarmHour;
+    private int alarmMinute;
     private Spinner fontSpinner;
     private TextView intervalText;
     private SeekBar intervalSeek;
@@ -152,6 +182,67 @@ public final class PhotoFolderActivity extends Activity {
                 .getBoolean(CLOCK_BACKGROUND, true));
         backgroundCheck.setPadding(dp(10), dp(3), dp(10), dp(3));
         root.addView(backgroundCheck, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
+
+        SharedPreferences clockPrefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+        root.addView(sectionTitle("時鐘與省電"));
+        timeCheck = option("顯示時間", clockPrefs.getBoolean(CLOCK_TIME_ENABLED, true));
+        dateCheck = option("顯示日期", clockPrefs.getBoolean(CLOCK_DATE_ENABLED, true));
+        burnInCheck = option("防烙印微幅位移", clockPrefs.getBoolean(BURN_IN_ENABLED, true));
+        ambientCheck = option("依環境光線調整亮度",
+                clockPrefs.getBoolean(AMBIENT_BRIGHTNESS_ENABLED, false));
+        lowPowerCheck = option("低耗電模式（停用相片平移動畫）",
+                clockPrefs.getBoolean(LOW_POWER_ENABLED, false));
+        root.addView(timeCheck);
+        root.addView(dateCheck);
+        root.addView(burnInCheck);
+        root.addView(ambientCheck);
+        root.addView(lowPowerCheck);
+
+        nightCheck = option("夜間定時暗屏", clockPrefs.getBoolean(NIGHT_MODE_ENABLED, false));
+        root.addView(nightCheck);
+        nightStartHour = clockPrefs.getInt(NIGHT_START_HOUR, 23);
+        nightEndHour = clockPrefs.getInt(NIGHT_END_HOUR, 7);
+        LinearLayout nightRow = new LinearLayout(this);
+        nightRow.setGravity(Gravity.CENTER_VERTICAL);
+        nightStartButton = button("", PANEL);
+        nightEndButton = button("", PANEL);
+        updateNightButtons();
+        nightStartButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { selectNightHour(true); }
+        });
+        nightEndButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { selectNightHour(false); }
+        });
+        nightRow.addView(nightStartButton, new LinearLayout.LayoutParams(0, dp(38), 1));
+        LinearLayout.LayoutParams nightEndParams = new LinearLayout.LayoutParams(0, dp(38), 1);
+        nightEndParams.setMargins(dp(10), 0, 0, 0);
+        nightRow.addView(nightEndButton, nightEndParams);
+        root.addView(nightRow);
+
+        root.addView(sectionTitle("電腦提供的天氣"));
+        weatherCheck = option("顯示溫度與天氣圖示",
+                clockPrefs.getBoolean(WEATHER_ENABLED, true));
+        weatherLocationCheck = option("顯示地名",
+                clockPrefs.getBoolean(WEATHER_SHOW_LOCATION, false));
+        root.addView(weatherCheck);
+        root.addView(weatherLocationCheck);
+
+        root.addView(sectionTitle("鬧鐘"));
+        alarmCheck = option("啟用鬧鐘",
+                clockPrefs.getBoolean(AlarmHelper.PREF_ALARM_ENABLED, false));
+        alarmRepeatCheck = option("每天重複",
+                clockPrefs.getBoolean(AlarmHelper.PREF_ALARM_REPEAT, true));
+        alarmHour = clockPrefs.getInt(AlarmHelper.PREF_ALARM_HOUR, 7);
+        alarmMinute = clockPrefs.getInt(AlarmHelper.PREF_ALARM_MINUTE, 0);
+        alarmTimeButton = button("", PANEL);
+        updateAlarmButton();
+        alarmTimeButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { selectAlarmTime(); }
+        });
+        root.addView(alarmCheck);
+        root.addView(alarmRepeatCheck);
+        root.addView(alarmTimeButton, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
 
         LinearLayout intervalRow = new LinearLayout(this);
@@ -364,9 +455,24 @@ public final class PhotoFolderActivity extends Activity {
                 .edit()
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders))
                 .putBoolean(CLOCK_BACKGROUND, backgroundCheck.isChecked())
+                .putBoolean(CLOCK_TIME_ENABLED, timeCheck.isChecked())
+                .putBoolean(CLOCK_DATE_ENABLED, dateCheck.isChecked())
+                .putBoolean(NIGHT_MODE_ENABLED, nightCheck.isChecked())
+                .putInt(NIGHT_START_HOUR, nightStartHour)
+                .putInt(NIGHT_END_HOUR, nightEndHour)
+                .putBoolean(AMBIENT_BRIGHTNESS_ENABLED, ambientCheck.isChecked())
+                .putBoolean(BURN_IN_ENABLED, burnInCheck.isChecked())
+                .putBoolean(LOW_POWER_ENABLED, lowPowerCheck.isChecked())
+                .putBoolean(WEATHER_ENABLED, weatherCheck.isChecked())
+                .putBoolean(WEATHER_SHOW_LOCATION, weatherLocationCheck.isChecked())
+                .putBoolean(AlarmHelper.PREF_ALARM_ENABLED, alarmCheck.isChecked())
+                .putBoolean(AlarmHelper.PREF_ALARM_REPEAT, alarmRepeatCheck.isChecked())
+                .putInt(AlarmHelper.PREF_ALARM_HOUR, alarmHour)
+                .putInt(AlarmHelper.PREF_ALARM_MINUTE, alarmMinute)
                 .putInt(CLOCK_FONT_STYLE, fontSpinner.getSelectedItemPosition())
                 .putInt(PHOTO_INTERVAL_SECONDS, 10 + intervalSeek.getProgress() * 5)
                 .apply();
+        AlarmHelper.updateAlarmSchedule(this);
         setResult(RESULT_OK);
         finish();
     }
@@ -374,6 +480,60 @@ public final class PhotoFolderActivity extends Activity {
     private void updateIntervalText() {
         if (intervalText != null && intervalSeek != null) {
             intervalText.setText("單張停留：" + (10 + intervalSeek.getProgress() * 5) + " 秒");
+        }
+    }
+
+    private CheckBox option(String label, boolean checked) {
+        CheckBox check = new CheckBox(this);
+        check.setText(label);
+        check.setTextColor(PRIMARY);
+        check.setTextSize(16);
+        check.setChecked(checked);
+        check.setPadding(dp(10), dp(2), dp(10), dp(2));
+        return check;
+    }
+
+    private void selectNightHour(final boolean start) {
+        int value = start ? nightStartHour : nightEndHour;
+        new TimePickerDialog(this, new TimePickerDialog.OnTimeSetListener() {
+            @Override
+            public void onTimeSet(TimePicker view, int hourOfDay, int minute) {
+                if (start) {
+                    nightStartHour = hourOfDay;
+                } else {
+                    nightEndHour = hourOfDay;
+                }
+                updateNightButtons();
+            }
+        }, value, 0, true).show();
+    }
+
+    private void updateNightButtons() {
+        if (nightStartButton != null) {
+            nightStartButton.setText(String.format(java.util.Locale.US,
+                    "暗屏開始 %02d:00", nightStartHour));
+        }
+        if (nightEndButton != null) {
+            nightEndButton.setText(String.format(java.util.Locale.US,
+                    "恢復顯示 %02d:00", nightEndHour));
+        }
+    }
+
+    private void selectAlarmTime() {
+        new TimePickerDialog(this, new TimePickerDialog.OnTimeSetListener() {
+            @Override
+            public void onTimeSet(TimePicker view, int hourOfDay, int minute) {
+                alarmHour = hourOfDay;
+                alarmMinute = minute;
+                updateAlarmButton();
+            }
+        }, alarmHour, alarmMinute, true).show();
+    }
+
+    private void updateAlarmButton() {
+        if (alarmTimeButton != null) {
+            alarmTimeButton.setText(String.format(java.util.Locale.US,
+                    "響鈴時間 %02d:%02d", alarmHour, alarmMinute));
         }
     }
 

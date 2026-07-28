@@ -1,97 +1,115 @@
-# QuietPanel v6.9.0-ADB
+# QuietPanel v9.0.0
 
-QuietPanel 把 Android 4.2.2 手機變成 Windows 系統監控與快捷控制面板。此版本固定使用 USB ADB 轉送，不包含 Wi-Fi、藍牙、PAN、RFCOMM 或虛擬 COM 埠功能。
+QuietPanel 把 Android 手機變成 Windows 系統監控、快捷控制與相片時鐘面板。v9 將原本分開維護的 USB ADB 與 Bluetooth PAN／Wi-Fi 版本重新合併：Android 畫面、時鐘及通訊協定只有一份，Windows Bridge 依需求使用 ADB 或 Wireless 建置。
 
-## USB ADB 連線
+支援 Android 4.2（API 17）至目前的 Android；主要實機為 Xiaomi 2013023／Android 4.2.2。
 
-- Bridge 使用 ADB 將 Windows 的本機 `TCP 27183` 與 `TCP 27184` 轉送至手機；Android 只監聽 `127.0.0.1`，不會對任何網路介面開放服務。
-- Bridge 只接受一台已授權的 USB Android 裝置；若沒有裝置或授權失效，會持續等待並顯示狀態。
+## 連線模式
 
-## 產出檔案
+同一個 Android APK 可接受四種模式，點標題列的模式按鈕切換：
 
-- `dist\QuietPanel-v6.9.0-ADB.apk`：Android App。
-- `dist\QuietPanelBridge-v6.9.0-ADB.exe`：USB ADB Bridge。
-- `dist\QuietPanelBridge.json`：系統匣頁面選擇設定。
-- `dist\SHA256SUMS.txt`：產出檔案雜湊。
+- `ADB`：只監聽 `127.0.0.1:27183`，由 USB ADB Port Forward 接入。新安裝預設使用此模式。
+- `BT`：啟用 Bluetooth PAN，並在所有 IP 介面監聽。
+- `WiFi`：不啟用 PAN，只等待區域網路連線。
+- `AUTO`：啟用 PAN，同時接受 ADB、Bluetooth PAN 或 Wi-Fi 的 TCP 連線。
 
-## 系統匣與頁面選擇
+Windows 端有兩個 Bridge：
 
-Bridge 啟動後常駐 Windows 系統匣，不再顯示主控台視窗。點選系統匣圖示會看到七個頁面的勾選選單；取消勾選的頁面會立刻從手機的左右滑動順序中移除。Bridge 至少保留一頁，設定會儲存在 Bridge 同目錄的 `QuietPanelBridge.json`。
+- `QuietPanelBridge-v9.0.0-ADB.exe`
+- `QuietPanelBridge-v9.0.0-Wireless.exe`
 
-## 多目錄相簿
+兩者共用系統監測、控制、天氣、JSON 協定與系統匣程式碼；只替換連線建立方式。
 
-在手機第三頁點一下照片，左上角才會暫時出現「相簿資料夾」按鈕。選擇畫面可以瀏覽 SD 卡並同時勾選多個目錄；每個選定目錄都會包含其子目錄。設定只保存在手機端，照片仍完全由手機讀取與播放。
+## v9 相片時鐘
 
-## 電腦螢幕同步節電
+LittleClock v3.0.2 的時鐘能力已整合到 QuietPanel 相片頁：
 
-Bridge 會偵測 Windows 螢幕的開關狀態。電腦螢幕關閉時，手機會停止相簿動畫並解除「保持常亮」，讓 Android 依手機的螢幕逾時設定關閉螢幕；電腦螢幕重新亮起時，手機會自動亮起並回到 QuietPanel。
+- 時間與日期可分別顯示或隱藏。
+- 時鐘可拖曳、雙指縮放並記住橫／直向位置。
+- 可選字型及半透明底板。
+- 每三分鐘微幅位移，降低長時間顯示的烙印風險。
+- 可設定夜間暗屏時段；觸控後暫時喚醒 30 秒。
+- 可選環境光自動亮度。
+- 低耗電模式停用相片平移動畫。
+- 支援每日或單次鬧鐘、貪睡及新舊 Android 響鈴流程。
+- 顯示由 Windows Bridge 提供的天氣圖示、溫度及選用地名。
 
-請在手機的開發人員選項關閉「充電時不休眠／Stay awake」，並設定合適的螢幕逾時（例如 10 分鐘）；否則 Android 仍可能在 USB 充電時保持螢幕亮著。
+相片仍只從手機本機選定的資料夾讀取，不會傳到電腦。
 
-> **AI 程式寫作練習／個人自用專案。** 本儲存庫不是正式產品，也不尋求功能請求、問題回報、技術支援或 Pull Request。請勿為此專案投入額外的社群維護、除錯或支援時間。
+## 電腦端天氣
 
-此專案由使用者與 AI 協作開發，內容僅供學習與私人設備使用；請自行評估執行巨集與系統控制功能的風險。
+Bridge 使用現代 HTTPS 向 Open-Meteo 查詢，手機不直接連天氣服務。這避開 Android 4.2 的 TLS 與憑證限制，也讓 ADB、PAN 及未來 BLE 共用相同資料來源。
 
-## 隱私與網路行為
+預設設定位於 Bridge 同目錄的 `QuietPanelBridge.json`：
 
-- ADB 版只在手機 localhost 上使用 `TCP 27183`、`TCP 27184`；埠號由 ADB forward 建立，程式不會開放 Wi-Fi 或藍牙網路服務。
-- 程式不收集、不上傳使用者檔案、輸入內容、截圖或系統監控紀錄。
-- 唯一的外部網路請求是 Windows Bridge 每六小時最多一次向 NASA APOD 取得當日公開圖片與說明。
-- NASA API Key 不寫入原始碼。若使用者自行設定 `QUIETPANEL_NASA_API_KEY`，它只會從本機環境變數讀取，且不會被 Git 追蹤。
+```json
+{
+  "bluetooth_device": "68:DF:DD:0C:C1:AE",
+  "phone_ip": "192.168.44.1",
+  "enabledPages": [0, 1, 2, 3, 4, 5, 6],
+  "weather": {
+    "enabled": true,
+    "location": "Taipei",
+    "latitude": 25.033,
+    "longitude": 121.5654
+  }
+}
+```
 
-## 開發與測試環境
-
-此版本在下列私人設備與軟體環境開發、編譯及實機驗證：
-
-| 類別 | 環境 |
-| --- | --- |
-| 電腦 | Windows 10 教育版 64 位元（10.0.19045） |
-| 手機 | Xiaomi 2013023，Android 4.2.2（API 17） |
-| 電腦端 | Rust 1.97.1、Windows Rust Bridge |
-| Android 建置 | Microsoft OpenJDK 17.0.12、Android compileSdk 36、Gradle 9.1.0 |
-| 連線 | USB ADB Forward，TCP `27183`、`27184` |
-
-## 七個頁面
-
-1. 系統：CPU、記憶體、網路下載與上傳速率，以及最近五分鐘歷史曲線。
-2. 儲存：最多四個 Windows 磁碟的容量與使用率。
-3. 相簿：全螢幕隨機輪播手機端所選的一個或多個 SD 卡目錄中的 JPG、JPEG 與 PNG，右下角以大型雙行時鐘顯示時間與日期。
-4. 工作相簿：沿用第三頁的照片、輪播、時鐘和設定，但固定展示版面，不提供時鐘手勢與相簿設定按鈕；含 YouTube、全螢幕截圖與貼上快捷鍵。
-5. NASA：每日天文圖片、標題、日期、版權與英文說明；圖片由 Win10 下載後經 USB 傳送。
-6. Macro：靜音、YouTube、全螢幕截圖、顯示桌面、播放／暫停、音量加、音量減、鎖定電腦。
-7. 快捷：上一視窗、工作檢視、最小化視窗、關閉視窗、複製、貼上、復原、重做。
-
-左右滑動換頁。從任何按鈕開始滑動都會取消按鈕點擊，不會同時執行指令。「關閉視窗」必須長按，避免誤觸。
-
-相簿頁只在畫面停留於第三頁時輪播，每張照片停留時間可在相簿設定中調整為 10～300 秒。比例與螢幕不同的照片會保持滿版，沿著超出畫面的方向做非常緩慢的微幅平移；平移約以 15fps 更新。進入相簿頁會隱藏標題列與頁面指示；大型雙行時鐘顯示時間、日期與星期，不顯示秒，並可拖曳與縮放（75%～250%，會保存）。
-
-相簿設定採緊湊的可捲動選單，提供多資料夾選取、時間日期底板、輪播間隔與時鐘字型。中文子集字型使用中文日期，拉丁子集字型使用英文日期，避免日期缺字；字型資產損壞或不存在時會回退至相近的 Android 系統字型。時鐘在字型、縮放或螢幕尺寸改變後會重新限制於畫面內，空間不足時只縮小實際顯示比例，不改寫使用者保存的偏好。程式仍一次只解碼一張主要照片，離開相簿頁會停止工作並釋放圖片資源。
-
-v6.8.13-test 將相簿慢移調整為 10fps 與 13% 行程，並延長淡入淡出及 3D 轉場，呈現更緩慢的節奏。時間與換圖改採事件式排程；隱藏的監控頁仍保留每秒歷史樣本與警告判定，但延後文字格式化及圖表重繪，切回頁面時一次刷新。
-
-公開授權字型可由 `android/prepare_photo_fonts.py` 重新下載並建立最小字元子集。Storopia 不會由腳本下載，其本機子集仍因重散布授權未確認而被 Git 忽略；含 Storopia 的 APK 僅供個人測試，請勿分發。
-
-CPU 連續 30 秒達到 90% 時會顯示過高警告；降至 85% 以下解除。磁碟使用率達 90% 時會顯示空間不足警告。歷史資料只保存在手機記憶體中，App 重啟後重新累積。
+天氣每 60 分鐘更新一次，失敗後每 10 分鐘重試。快取保存在 `QuietPanelWeatherCache.json`；超過六小時未成功更新時，手機隱藏過期資料。天氣只在連線建立及內容更新時傳送，不加入每秒監控封包。
 
 ## 使用方式
 
-1. 在手機開啟 USB 偵錯，首次連線時接受電腦的 RSA 授權。
-2. 在 `dist` 執行 `Install-Android-v6-ADB.cmd` 安裝並啟動 App。
-3. 保持 USB 連線，執行 `Start-QuietPanel-v6-ADB.cmd`；Bridge 會出現在系統匣並建立 ADB forward。
-4. 可從系統匣勾選要保留的頁面；至少會保留一頁。
+### USB ADB
 
-NASA APOD 最多每六小時檢查一次，Win10 與手機都只保留最新一張快取。一般系統資料使用 `tcp:27183`；圖片使用獨立的 `tcp:27184` 二進位通道，避免把圖片編碼成大型 JSON。若當日內容是影片，第五頁顯示 NASA 提供的影片縮圖。預設使用 NASA `DEMO_KEY`；可用環境變數 `QUIETPANEL_NASA_API_KEY` 設定自己的免費 API Key。
+1. 手機開啟 USB 偵錯並允許電腦的 RSA 授權。
+2. 執行 `dist\Install-Android.cmd`。
+3. 手機標題列選擇 `ADB`。
+4. 執行 `dist\Start-QuietPanel-ADB.cmd`。
 
-全螢幕截圖使用 Windows + Print Screen，交由 Windows 儲存到系統設定的螢幕擷取畫面位置。
+### Bluetooth PAN
+
+1. 在 Windows 與手機完成一般藍牙配對。
+2. 手機選擇 `BT` 或 `AUTO`。
+3. 目標 Xiaomi 2013023 第一次使用或 Windows 重灌後，執行 `dist\Setup-Bluetooth-PAN.cmd`，將 Windows PAN 設為 `192.168.44.2/24`。
+4. 執行 `dist\Start-QuietPanel-Wireless.cmd`。
+
+其他手機應先使用 DHCP，不要直接套用紅米專用的靜態位址。若要還原，執行 `Setup-Bluetooth-PAN.cmd -RestoreDhcp`。
+
+## 七個頁面
+
+1. 系統：CPU、記憶體、網路與最近五分鐘歷史。
+2. 儲存：最多四個 Windows 磁碟的容量與使用率。
+3. 相簿：手機本機相片、可調整時鐘及天氣。
+4. 工作相簿：相片時鐘及工作快捷鍵。
+5. NASA：每日天文圖片與說明。
+6. Macro：靜音、媒體、截圖、桌面及鎖定等操作。
+7. 快捷：視窗、複製、貼上、復原及重做。
+
+## 隱私與網路
+
+- ADB 模式的控制通道只監聽手機 localhost。
+- Wireless 模式會開啟手機 TCP `27183`、`27184` 及 UDP `27185`；只應在信任的 Wi-Fi 或已配對 PAN 使用。
+- Bridge 會連線 Open-Meteo 取得天氣，並可連線 NASA APOD 取得每日圖片。
+- 程式不收集或上傳私人照片、截圖、輸入內容或系統監控紀錄。
+- NASA API Key 只從本機環境變數 `QUIETPANEL_NASA_API_KEY` 讀取。
 
 ## 建置
 
-需求：Rust、JDK 17、Android SDK 36、Gradle Wrapper 所需檔案。
+需求：Rust、JDK 17、Android SDK 36。
 
 ```powershell
 .\build.ps1
 ```
 
-建置會依序執行 Rust 格式檢查與測試、Release 編譯、Android Lint 與 Release APK 編譯，最後把 APK、EXE、ADB 與 SHA-256 清單放到 `dist`。
+建置會執行：
 
-Android Release APK 目前使用本機 debug signing key，適合這台私人裝置直接安裝，不用於公開商店發行。
+1. Rust 格式檢查。
+2. ADB Bridge 測試與 Release 建置。
+3. Wireless/PAN Bridge 測試與 Release 建置。
+4. Android Lint 與 Release APK 建置。
+5. 組裝啟動腳本、PAN 設定工具及 SHA-256 清單。
+
+完整設計及移植紀錄見 [v9 架構報告](docs/QuietPanel-v9-Clock-Weather-Dual-Transport.md)。PAN 的硬體診斷經過見 [v8 Bluetooth PAN 診斷](docs/QuietPanel-v8-Bluetooth-PAN-Diagnosis-2026-07-26.md)。
+
+> 此專案是使用者與 AI 協作的私人學習專案。Android APK 使用本機 debug signing key，不應視為正式商店發行簽章。
