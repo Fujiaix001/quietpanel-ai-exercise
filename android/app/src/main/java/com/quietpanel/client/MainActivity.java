@@ -7,6 +7,11 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.text.Spannable;
+import android.text.SpannableString;
+import android.text.TextPaint;
+import android.text.style.MetricAffectingSpan;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -71,6 +76,33 @@ public final class MainActivity extends Activity
     private static final float MAX_CLOCK_TEXT_SCALE = 2.5f;
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
     private static final int MAX_PHOTO_FILES = 10000;
+
+    /**
+     * The clock font subsets intentionally do not all ship a degree glyph.
+     * Keep that one tiny glyph predictable with Android's ubiquitous sans-serif
+     * face while leaving every digit and letter in the selected clock font.
+     */
+    private static final class FixedTypefaceSpan extends MetricAffectingSpan {
+        private final Typeface typeface;
+
+        FixedTypefaceSpan(Typeface typeface) {
+            this.typeface = typeface;
+        }
+
+        @Override
+        public void updateDrawState(TextPaint paint) {
+            apply(paint);
+        }
+
+        @Override
+        public void updateMeasureState(TextPaint paint) {
+            apply(paint);
+        }
+
+        private void apply(Paint paint) {
+            paint.setTypeface(typeface);
+        }
+    }
 
     private final List<Button> actionButtons = new ArrayList<Button>();
     private final DiskRow[] diskRows = new DiskRow[4];
@@ -1353,6 +1385,14 @@ public final class MainActivity extends Activity
         if (workPasteButton != null) {
             workPasteButton.setTypeface(typeface);
         }
+        // Weather must share the clock typeface.  applyWeather() applies a
+        // fixed system face only to its degree symbol.
+        if (weatherTemperature != null) {
+            weatherTemperature.setTypeface(typeface);
+        }
+        if (weatherLocation != null) {
+            weatherLocation.setTypeface(typeface);
+        }
         updatePhotoClock();
     }
 
@@ -1774,7 +1814,14 @@ public final class MainActivity extends Activity
             return;
         }
         weatherIcon.setWeather(weather.optInt("code", 0), weather.optBoolean("is_day", true));
-        weatherTemperature.setText(String.format(Locale.US, "%.0f°C", temperature));
+        String temperatureText = String.format(Locale.US, "%.0f°C", temperature);
+        SpannableString styledTemperature = new SpannableString(temperatureText);
+        int degreeIndex = temperatureText.indexOf('\u00B0');
+        if (degreeIndex >= 0) {
+            styledTemperature.setSpan(new FixedTypefaceSpan(Typeface.SANS_SERIF), degreeIndex,
+                    degreeIndex + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        weatherTemperature.setText(styledTemperature);
         boolean showLocation = preferences.getBoolean(
                 PhotoFolderActivity.WEATHER_SHOW_LOCATION, false);
         weatherLocation.setText(showLocation ? weather.optString("location", "") : "");

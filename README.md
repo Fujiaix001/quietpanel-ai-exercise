@@ -1,4 +1,4 @@
-# QuietPanel v9.0.0
+# QuietPanel v9.0.1
 
 QuietPanel 把 Android 手機變成 Windows 系統監控、快捷控制與相片時鐘面板。v9 將原本分開維護的 USB ADB 與 Bluetooth PAN／Wi-Fi 版本重新合併：Android 畫面、時鐘及通訊協定只有一份，Windows Bridge 依需求使用 ADB 或 Wireless 建置。
 
@@ -15,8 +15,8 @@ QuietPanel 把 Android 手機變成 Windows 系統監控、快捷控制與相片
 
 Windows 端有兩個 Bridge：
 
-- `QuietPanelBridge-v9.0.0-ADB.exe`
-- `QuietPanelBridge-v9.0.0-Wireless.exe`
+- `QuietPanelBridge-v9.0.1-ADB.exe`
+- `QuietPanelBridge-v9.0.1-Wireless.exe`
 
 兩者共用系統監測、控制、天氣、JSON 協定與系統匣程式碼；只替換連線建立方式。
 
@@ -56,7 +56,7 @@ Bridge 使用現代 HTTPS 向 Open-Meteo 查詢，手機不直接連天氣服務
 }
 ```
 
-天氣每 60 分鐘更新一次，失敗後每 10 分鐘重試。快取保存在 `QuietPanelWeatherCache.json`；超過六小時未成功更新時，手機隱藏過期資料。天氣只在連線建立及內容更新時傳送，不加入每秒監控封包。
+天氣每 60 分鐘更新一次，失敗後每 10 分鐘重試。快取保存在 `QuietPanelWeatherCache.json`；超過六小時未成功更新時，手機隱藏過期資料。天氣只在連線建立及內容更新時傳送，不加入每秒監控封包。`location` 是顯示標籤，請填英文名稱（例如 `Taipei`、`New Taipei City`），以便完整套用時鐘字型；座標才是實際查詢位置。
 
 ## 使用方式
 
