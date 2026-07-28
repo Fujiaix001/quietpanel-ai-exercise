@@ -12,8 +12,26 @@ android {
         applicationId = "com.quietpanel.client"
         minSdk = 17
         targetSdk = 36
-        versionCode = 9001
-        versionName = "9.0.1"
+        versionCode = 9009
+        versionName = "9.0.9"
+    }
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("public") {
+            dimension = "distribution"
+            buildConfigField("boolean", "INCLUDE_STOROPIA", "false")
+        }
+        create("private") {
+            dimension = "distribution"
+            buildConfigField("boolean", "INCLUDE_STOROPIA", "true")
+        }
+    }
+
+    sourceSets {
+        getByName("private") {
+            assets.srcDir("src/private/assets")
+        }
     }
 
     buildTypes {

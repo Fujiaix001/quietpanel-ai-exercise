@@ -1,6 +1,7 @@
 package com.quietpanel.client;
 
 import android.content.Context;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -16,6 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /** One protocol server shared by ADB port-forward, Wi-Fi and Bluetooth PAN. */
 public final class TransportServer {
+    private static final String TAG = "QuietPanelTransport";
     public static final int MODE_AUTO = 0;
     public static final int MODE_WIFI = 1;
     public static final int MODE_BT = 2;
@@ -100,8 +102,13 @@ public final class TransportServer {
         }
     }
 
-    public long sendAction(String action) {
-        long id = nextActionId.getAndIncrement();
+    public long sendAction(final String action) {
+        final long id = nextActionId.getAndIncrement();
+        // Android rejects socket writes from a button's UI callback.  Run the
+        // complete write on a worker so every macro works on Android 10+.
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
         try {
             JSONObject message = new JSONObject();
             message.put("v", 1);
@@ -109,11 +116,16 @@ public final class TransportServer {
             message.put("id", id);
             message.put("action", action);
             if (!writeMessage(message)) {
+                Log.w(TAG, "Action was not written: " + action);
                 listener.onActionResult(id, false, "未連線至電腦");
+            } else {
+                Log.d(TAG, "Action written: " + action + " #" + id);
             }
         } catch (Exception error) {
             listener.onActionResult(id, false, safeMessage(error));
         }
+            }
+        }, "quietpanel-action-send").start();
         return id;
     }
 
@@ -244,6 +256,7 @@ public final class TransportServer {
                         message.optJSONObject("system"),
                         message.optJSONArray("disks"));
             } else if ("action_result".equals(type)) {
+                Log.d(TAG, "Action result received #" + message.optLong("id", -1));
                 listener.onActionResult(
                         message.optLong("id", -1),
                         message.optBoolean("ok", false),
@@ -269,6 +282,7 @@ public final class TransportServer {
             writer.flush();
             return true;
         } catch (Exception error) {
+            Log.w(TAG, "Write failed", error);
             closeQuietly(activeClientSocket);
             writer = null;
             activeClientSocket = null;

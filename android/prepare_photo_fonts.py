@@ -30,9 +30,10 @@ CJK_FONTS = {
     "font_digital.ttf", "font_sans.ttf", "font_serif.ttf",
     "font_rounded.ttf", "font_kai.ttf", "font_heavy.ttf",
 }
-LATIN_CHARS = "0123456789:./-_()[],+ ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+LATIN_CHARS = "0123456789:./-_()[],+° ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 CJK_DATE_CHARS = "年月日時星期一二三四五六"
 OUTPUT_DIR = Path(__file__).parent / "app" / "src" / "main" / "assets" / "fonts"
+PRIVATE_OUTPUT_DIR = Path(__file__).parent / "app" / "src" / "private" / "assets" / "fonts"
 
 
 def subset_font(source: Path, target: Path, characters: str) -> None:
@@ -72,9 +73,10 @@ def main() -> None:
 
     if args.storopia_source:
         source = args.storopia_source.resolve(strict=True)
-        subset_font(source, OUTPUT_DIR / "Storopia-Subset.ttf", LATIN_CHARS)
+        PRIVATE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        subset_font(source, PRIVATE_OUTPUT_DIR / "Storopia-Subset.ttf", LATIN_CHARS)
         print("Storopia-Subset.ttf generated for local testing; do not distribute.")
-    elif not (OUTPUT_DIR / "Storopia-Subset.ttf").exists():
+    elif not (PRIVATE_OUTPUT_DIR / "Storopia-Subset.ttf").exists():
         print("Storopia omitted; runtime will use the system fallback.")
 
 

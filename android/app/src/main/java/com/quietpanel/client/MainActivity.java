@@ -3,6 +3,7 @@ package com.quietpanel.client;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -11,6 +12,7 @@ import android.graphics.Paint;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.TextPaint;
+import android.text.TextUtils;
 import android.text.style.MetricAffectingSpan;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -20,6 +22,8 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.net.Uri;
+import android.provider.DocumentsContract;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
@@ -40,6 +44,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -75,13 +80,11 @@ public final class MainActivity extends Activity
     private static final float MIN_CLOCK_TEXT_SCALE = 0.75f;
     private static final float MAX_CLOCK_TEXT_SCALE = 2.5f;
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
-    private static final int MAX_PHOTO_FILES = 10000;
+    // Keep the complete selected album.  A slideshow must not silently omit
+    // images merely because the folder happens to contain a large collection.
+    private static final int MAX_PHOTO_FILES = Integer.MAX_VALUE;
 
-    /**
-     * The clock font subsets intentionally do not all ship a degree glyph.
-     * Keep that one tiny glyph predictable with Android's ubiquitous sans-serif
-     * face while leaving every digit and letter in the selected clock font.
-     */
+    /** Replaces Storopia's missing degree glyph with a matching geometric face. */
     private static final class FixedTypefaceSpan extends MetricAffectingSpan {
         private final Typeface typeface;
 
@@ -102,6 +105,31 @@ public final class MainActivity extends Activity
         private void apply(Paint paint) {
             paint.setTypeface(typeface);
         }
+    }
+
+    /** A slideshow item selected from either a legacy path or a system document tree. */
+    private static final class PhotoSource {
+        final File file;
+        final Uri uri;
+        final String identity;
+
+        private PhotoSource(File file, Uri uri, String identity) {
+            this.file = file;
+            this.uri = uri;
+            this.identity = identity;
+        }
+
+        static PhotoSource fromFile(File file, String identity) {
+            return new PhotoSource(file, null, identity);
+        }
+
+        static PhotoSource fromUri(Uri uri) {
+            return new PhotoSource(null, uri, uri.toString());
+        }
+    }
+
+    private interface PhotoDiscovery {
+        void onPhotoDiscovered(PhotoSource source);
     }
 
     private final List<Button> actionButtons = new ArrayList<Button>();
@@ -154,7 +182,7 @@ public final class MainActivity extends Activity
     private Bitmap photoBitmap;
     private Bitmap pendingPhotoBitmap;
     private Bitmap softBackgroundBitmap;
-    private final List<File> photoFiles = new ArrayList<File>();
+    private final List<PhotoSource> photoFiles = new ArrayList<PhotoSource>();
     private final Handler photoHandler = new Handler();
     private final Matrix photoMatrix = new Matrix();
     private final SimpleDateFormat photoTimeFormat =
@@ -188,6 +216,9 @@ public final class MainActivity extends Activity
     private int photoFailures;
     private int photoGeneration;
     private boolean photoLoading;
+    private boolean photoScanInProgress;
+    private boolean photoCatalogLoaded;
+    private String photoFolderSignature = "";
     private boolean photoPanReverse = true;
     private boolean activityResumed;
     private boolean pcDisplayOn = true;
@@ -724,11 +755,14 @@ public final class MainActivity extends Activity
         weatherIcon = new WeatherIconView(this);
         weatherTemperature = makeText("", 20, Color.WHITE, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         weatherLocation = makeText("", 14, Color.WHITE, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        weatherRow.addView(weatherIcon, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        // Keep the supporting information compact.  The old 34/28dp fixed
+        // rows were much taller than their text, especially after enlarging
+        // the clock, which made weather/location and the alarm look detached.
+        weatherRow.addView(weatherIcon, new LinearLayout.LayoutParams(dp(24), dp(24)));
         weatherRow.addView(weatherTemperature, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)));
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(24)));
         LinearLayout.LayoutParams locationParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(34));
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(24));
         locationParams.setMargins(dp(8), 0, 0, 0);
         weatherRow.addView(weatherLocation, locationParams);
         clockPanel.addView(weatherRow, new LinearLayout.LayoutParams(
@@ -736,12 +770,15 @@ public final class MainActivity extends Activity
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         alarmRow = new LinearLayout(this);
-        alarmRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        alarmRow.setGravity(Gravity.RIGHT | Gravity.BOTTOM);
         alarmIcon = new AlarmIconView(this);
-        alarmTimeText = makeText("", 16, Color.WHITE, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        alarmRow.addView(alarmIcon, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        alarmTimeText = makeText("", 16, Color.WHITE, Gravity.RIGHT | Gravity.BOTTOM);
+        alarmTimeText.setIncludeFontPadding(false);
+        LinearLayout.LayoutParams alarmIconParams = new LinearLayout.LayoutParams(dp(14), dp(14));
+        alarmIconParams.gravity = Gravity.BOTTOM;
+        alarmRow.addView(alarmIcon, alarmIconParams);
         alarmRow.addView(alarmTimeText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(28)));
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
         clockPanel.addView(alarmRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -1393,6 +1430,9 @@ public final class MainActivity extends Activity
         if (weatherLocation != null) {
             weatherLocation.setTypeface(typeface);
         }
+        if (alarmTimeText != null) {
+            alarmTimeText.setTypeface(typeface);
+        }
         updatePhotoClock();
     }
 
@@ -1494,6 +1534,35 @@ public final class MainActivity extends Activity
         }
         if (alarmTimeText != null) {
             alarmTimeText.setTextSize(16.0f * displayScale);
+        }
+
+        // Scale the compact supporting rows with their text.  These dimensions
+        // leave enough room for the glyphs, but remove the oversized blank
+        // line spacing that the earlier 34/28dp rows introduced.
+        int weatherSize = dp(Math.max(1, Math.round(24.0f * displayScale)));
+        int alarmTextHeight = dp(Math.max(1, Math.round(20.0f * displayScale)));
+        int alarmIconSize = dp(Math.max(1, Math.round(14.0f * displayScale)));
+        resizeView(weatherIcon, weatherSize, weatherSize);
+        resizeView(weatherTemperature, ViewGroup.LayoutParams.WRAP_CONTENT, weatherSize);
+        resizeView(weatherLocation, ViewGroup.LayoutParams.WRAP_CONTENT, weatherSize);
+        if (weatherLocation != null && weatherLocation.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+            ((LinearLayout.LayoutParams) weatherLocation.getLayoutParams()).leftMargin =
+                    dp(Math.max(1, Math.round(8.0f * displayScale)));
+            weatherLocation.requestLayout();
+        }
+        resizeView(alarmIcon, alarmIconSize, alarmIconSize);
+        resizeView(alarmTimeText, ViewGroup.LayoutParams.WRAP_CONTENT, alarmTextHeight);
+    }
+
+    private void resizeView(View view, int width, int height) {
+        if (view == null || view.getLayoutParams() == null) {
+            return;
+        }
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params.width != width || params.height != height) {
+            params.width = width;
+            params.height = height;
+            view.setLayoutParams(params);
         }
     }
 
@@ -1614,13 +1683,22 @@ public final class MainActivity extends Activity
     }
 
     private void startPhotoSlideshow() {
-        stopPhotoSlideshow();
         updatePhotoClock();
-        refreshPhotoFiles();
-        if (!photoFiles.isEmpty()) {
-            loadNextPhoto();
+        Set<String> selectedFolders = getSelectedPhotoFolders();
+        String folderSignature = buildPhotoFolderSignature(selectedFolders);
+        if (photoScanInProgress && folderSignature.equals(photoFolderSignature)) {
+            return;
         }
-        schedulePhotoTicker();
+        if (photoCatalogLoaded && folderSignature.equals(photoFolderSignature)) {
+            if (photoBitmap == null && !photoFiles.isEmpty()) {
+                loadNextPhoto();
+            } else {
+                schedulePhotoTicker();
+            }
+            return;
+        }
+        stopPhotoSlideshow();
+        refreshPhotoFiles(selectedFolders, folderSignature);
     }
 
     private void schedulePhotoTicker() {
@@ -1642,6 +1720,7 @@ public final class MainActivity extends Activity
         photoHandler.removeCallbacks(photoPanTicker);
         photoGeneration++;
         photoLoading = false;
+        photoScanInProgress = false;
         if (photoImage != null) {
             photoImage.animate().cancel();
             photoImage.setImageDrawable(null);
@@ -1817,8 +1896,9 @@ public final class MainActivity extends Activity
         String temperatureText = String.format(Locale.US, "%.0f°C", temperature);
         SpannableString styledTemperature = new SpannableString(temperatureText);
         int degreeIndex = temperatureText.indexOf('\u00B0');
-        if (degreeIndex >= 0) {
-            styledTemperature.setSpan(new FixedTypefaceSpan(Typeface.SANS_SERIF), degreeIndex,
+        if (clockFontStyle == PhotoFontManager.STYLE_STOROPIA && degreeIndex >= 0) {
+            styledTemperature.setSpan(new FixedTypefaceSpan(
+                    PhotoFontManager.storopiaDegreeFallback(this)), degreeIndex,
                     degreeIndex + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         weatherTemperature.setText(styledTemperature);
@@ -1859,55 +1939,122 @@ public final class MainActivity extends Activity
         }
     }
 
-    private void refreshPhotoFiles() {
+    private Set<String> getSelectedPhotoFolders() {
+        Set<String> savedFolders = getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
+                .getStringSet(PhotoFolderActivity.PHOTO_FOLDERS, null);
+        return savedFolders == null
+                ? new HashSet<String>() : new HashSet<String>(savedFolders);
+    }
+
+    private String buildPhotoFolderSignature(Set<String> folders) {
+        if (folders.isEmpty()) {
+            return "@default";
+        }
+        List<String> orderedFolders = new ArrayList<String>(folders);
+        Collections.sort(orderedFolders);
+        return TextUtils.join("\n", orderedFolders);
+    }
+
+    private void refreshPhotoFiles(
+            final Set<String> selectedFolders, final String folderSignature) {
         photoFiles.clear();
         photoIndex = 0;
         photoFailures = 0;
+        photoCatalogLoaded = false;
+        photoScanInProgress = true;
+        photoFolderSignature = folderSignature;
+        final int scanGeneration = photoGeneration;
+        showPhotoStatus("正在掃描相簿資料夾…", SECONDARY);
 
-        Set<String> selectedFolders = getSharedPreferences(
-                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
-                .getStringSet(PhotoFolderActivity.PHOTO_FOLDERS, null);
-        if (selectedFolders == null || selectedFolders.isEmpty()) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final List<PhotoSource> scannedPhotos = new ArrayList<PhotoSource>();
+                final boolean[] firstPhotoPublished = new boolean[] { false };
+                final String scanError = collectSelectedPhotoFiles(selectedFolders, scannedPhotos,
+                        new PhotoDiscovery() {
+                            @Override
+                            public void onPhotoDiscovered(final PhotoSource source) {
+                                if (firstPhotoPublished[0]) {
+                                    return;
+                                }
+                                firstPhotoPublished[0] = true;
+                                runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        if (scanGeneration != photoGeneration || !photoFiles.isEmpty()) {
+                                            return;
+                                        }
+                                        photoFiles.add(source);
+                                        photoIndex = 0;
+                                        showPhotoStatus("相簿正在建立完整索引…", SECONDARY);
+                                        loadNextPhoto();
+                                    }
+                                });
+                            }
+                        });
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (scanGeneration != photoGeneration) {
+                            return;
+                        }
+                        photoScanInProgress = false;
+                        photoCatalogLoaded = true;
+                        photoFiles.clear();
+                        photoFiles.addAll(scannedPhotos);
+                        Collections.shuffle(photoFiles);
+                        if (photoFiles.isEmpty()) {
+                            showPhotoStatus(scanError == null
+                                    ? "選擇的資料夾沒有可播放照片\n請點一下畫面，再選擇「相簿資料夾」"
+                                    : scanError, scanError == null ? SECONDARY : WARNING);
+                        } else {
+                            if (photoBitmap == null && !photoLoading) {
+                                loadNextPhoto();
+                            }
+                        }
+                        schedulePhotoTicker();
+                    }
+                });
+            }
+        }, "QuietPanel-photo-scan").start();
+    }
+
+    private String collectSelectedPhotoFiles(
+            Set<String> selectedFolders, List<PhotoSource> output, PhotoDiscovery discovery) {
+        if (selectedFolders.isEmpty()) {
             File defaultDirectory = new File(
                     Environment.getExternalStorageDirectory(), PHOTO_DIRECTORY);
             if (!defaultDirectory.exists() && !defaultDirectory.mkdirs()) {
-                showPhotoStatus(
-                        "無法建立預設照片資料夾\n" + defaultDirectory.getAbsolutePath(),
-                        WARNING);
-                return;
+                return "無法建立預設照片資料夾\n" + defaultDirectory.getAbsolutePath();
             }
-            selectedFolders = new HashSet<String>();
             selectedFolders.add(defaultDirectory.getAbsolutePath());
         }
 
         Set<String> visitedDirectories = new HashSet<String>();
         Set<String> discoveredPhotos = new LinkedHashSet<String>();
         for (String path : selectedFolders) {
-            collectPhotoFiles(
-                    new File(path), visitedDirectories, discoveredPhotos, 0);
+            if (path.startsWith("content://") && android.os.Build.VERSION.SDK_INT >= 21) {
+                collectDocumentTreePhotos(Uri.parse(path), visitedDirectories,
+                        discoveredPhotos, output, discovery, 0);
+            } else {
+                collectPhotoFiles(
+                        new File(path), visitedDirectories, discoveredPhotos, output, discovery, 0);
+            }
             if (discoveredPhotos.size() >= MAX_PHOTO_FILES) {
                 break;
             }
         }
-        for (String path : discoveredPhotos) {
-            photoFiles.add(new File(path));
-        }
-        Collections.shuffle(photoFiles);
-        if (photoFiles.isEmpty()) {
-            showPhotoStatus(
-                    "選擇的資料夾沒有可播放照片\n"
-                            + "請點一下畫面，再選擇「相簿資料夾」",
-                    SECONDARY);
-        } else {
-            showPhotoStatus(
-                    "正在載入 " + photoFiles.size() + " 張照片…", SECONDARY);
-        }
+        return null;
     }
 
     private void collectPhotoFiles(
             File directory,
             Set<String> visitedDirectories,
             Set<String> discoveredPhotos,
+            List<PhotoSource> output,
+            PhotoDiscovery discovery,
             int depth) {
         if (directory == null || !directory.isDirectory()
                 || depth > 12 || discoveredPhotos.size() >= MAX_PHOTO_FILES) {
@@ -1927,9 +2074,110 @@ public final class MainActivity extends Activity
             }
             if (entry.isDirectory() && !entry.getName().startsWith(".")) {
                 collectPhotoFiles(
-                        entry, visitedDirectories, discoveredPhotos, depth + 1);
+                        entry, visitedDirectories, discoveredPhotos, output, discovery, depth + 1);
             } else if (entry.isFile() && isSupportedPhoto(entry.getName())) {
-                discoveredPhotos.add(entry.getAbsolutePath());
+                String photoPath = canonicalPath(entry);
+                if (discoveredPhotos.add(photoPath)) {
+                    PhotoSource source = PhotoSource.fromFile(entry, photoPath);
+                    output.add(source);
+                    discovery.onPhotoDiscovered(source);
+                }
+            }
+        }
+    }
+
+    /**
+     * Reads a folder selected through Android's system picker. This is the
+     * only reliable way to access removable SD cards on Fire OS and Android
+     * scoped-storage devices.
+     */
+    private void collectDocumentTreePhotos(
+            Uri treeUri,
+            Set<String> visitedDirectories,
+            Set<String> discoveredPhotos,
+            List<PhotoSource> output,
+            PhotoDiscovery discovery,
+            int depth) {
+        if (depth > 12 || discoveredPhotos.size() >= MAX_PHOTO_FILES) {
+            return;
+        }
+        try {
+            String rootId = DocumentsContract.getTreeDocumentId(treeUri);
+            Uri rootDocument = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId);
+            collectDocumentDirectoryPhotos(treeUri, rootDocument, visitedDirectories,
+                    discoveredPhotos, output, discovery, depth);
+        } catch (Exception ignored) {
+            // The picker can revoke a removable card while the app is open.
+        }
+    }
+
+    private void collectDocumentDirectoryPhotos(
+            Uri treeUri,
+            Uri directoryUri,
+            Set<String> visitedDirectories,
+            Set<String> discoveredPhotos,
+            List<PhotoSource> output,
+            PhotoDiscovery discovery,
+            int depth) {
+        if (depth > 12 || discoveredPhotos.size() >= MAX_PHOTO_FILES) {
+            return;
+        }
+        String directoryId;
+        try {
+            directoryId = DocumentsContract.getDocumentId(directoryUri);
+        } catch (Exception ignored) {
+            return;
+        }
+        String visitKey = treeUri.toString() + "|" + directoryId;
+        if (!visitedDirectories.add(visitKey)) {
+            return;
+        }
+
+        Cursor cursor = null;
+        try {
+            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, directoryId);
+            String[] projection = new String[] {
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+            };
+            cursor = getContentResolver().query(children, projection, null, null, null);
+            if (cursor == null) {
+                return;
+            }
+            int idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+            int nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+            int typeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE);
+            List<Uri> childDirectories = new ArrayList<Uri>();
+            while (cursor.moveToNext() && discoveredPhotos.size() < MAX_PHOTO_FILES) {
+                String childId = cursor.getString(idColumn);
+                String childName = cursor.getString(nameColumn);
+                String mimeType = cursor.getString(typeColumn);
+                Uri childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType)) {
+                    // Finish the selected folder's own photos before asking
+                    // the provider for each child directory.  On Fire OS this
+                    // avoids an early deep branch delaying every usable image.
+                    childDirectories.add(childUri);
+                } else if (childName != null && isSupportedPhoto(childName)
+                        && discoveredPhotos.add(childUri.toString())) {
+                    PhotoSource source = PhotoSource.fromUri(childUri);
+                    output.add(source);
+                    discovery.onPhotoDiscovered(source);
+                }
+            }
+            for (Uri childDirectory : childDirectories) {
+                if (discoveredPhotos.size() >= MAX_PHOTO_FILES) {
+                    return;
+                }
+                collectDocumentDirectoryPhotos(treeUri, childDirectory, visitedDirectories,
+                        discoveredPhotos, output, discovery, depth + 1);
+            }
+        } catch (Exception ignored) {
+            // A malformed provider or a removed card must not stop other folders.
+        } finally {
+            if (cursor != null) {
+                cursor.close();
             }
         }
     }
@@ -1958,7 +2206,7 @@ public final class MainActivity extends Activity
             photoIndex = 0;
         }
 
-        final File file = photoFiles.get(photoIndex++);
+        final PhotoSource source = photoFiles.get(photoIndex++);
         final int generation = photoGeneration;
         final boolean analyzeColor = adaptiveColorEnabled;
         final boolean analyzeFocus = smartFocusEnabled;
@@ -1967,7 +2215,7 @@ public final class MainActivity extends Activity
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final Bitmap bitmap = decodePhoto(file);
+                final Bitmap bitmap = decodePhoto(source);
                 final PhotoEffects.Analysis analysis = analyzeColor || analyzeFocus
                         ? PhotoEffects.analyze(bitmap, analyzeColor, analyzeFocus) : null;
                 runOnUiThread(new Runnable() {
@@ -2008,10 +2256,21 @@ public final class MainActivity extends Activity
         }, "QuietPanel-photo-decode").start();
     }
 
-    private Bitmap decodePhoto(File file) {
+    private Bitmap decodePhoto(PhotoSource source) {
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+        InputStream boundsInput = null;
+        try {
+            boundsInput = openPhotoInputStream(source);
+            if (boundsInput == null) {
+                return null;
+            }
+            BitmapFactory.decodeStream(boundsInput, null, bounds);
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            closeInputStream(boundsInput);
+        }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
             return null;
         }
@@ -2034,17 +2293,42 @@ public final class MainActivity extends Activity
             options.inSampleSize = sample;
             options.inPreferredConfig = Bitmap.Config.RGB_565;
             options.inDither = true;
+            InputStream photoInput = null;
             try {
-                Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+                photoInput = openPhotoInputStream(source);
+                if (photoInput == null) {
+                    return null;
+                }
+                Bitmap bitmap = BitmapFactory.decodeStream(photoInput, null, options);
                 if (bitmap != null) {
                     return bitmap;
                 }
             } catch (OutOfMemoryError oom) {
                 System.gc();
+            } catch (Exception ignored) {
+                return null;
+            } finally {
+                closeInputStream(photoInput);
             }
             sample *= 2;
         }
         return null;
+    }
+
+    private InputStream openPhotoInputStream(PhotoSource source) throws Exception {
+        return source.file != null
+                ? new FileInputStream(source.file)
+                : getContentResolver().openInputStream(source.uri);
+    }
+
+    private void closeInputStream(InputStream input) {
+        if (input == null) {
+            return;
+        }
+        try {
+            input.close();
+        } catch (Exception ignored) {
+        }
     }
 
     private void displayPhoto(final Bitmap bitmap) {

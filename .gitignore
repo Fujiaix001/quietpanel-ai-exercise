@@ -6,6 +6,7 @@
 /android/app/src/main/assets/fonts/Storopia.ttf
 /android/app/src/main/assets/fonts/Storopia-Subset.ttf
 /android/app/src/main/assets/fonts/NOTICE-Storopia.txt
+/android/app/src/private/
 /local-backups/
 /dist/
 *.log

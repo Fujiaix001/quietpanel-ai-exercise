@@ -3,6 +3,7 @@ package com.quietpanel.client;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.TimePickerDialog;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -10,6 +11,8 @@ import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.Gravity;
@@ -56,6 +59,8 @@ public final class PhotoFolderActivity extends Activity {
     public static final String LOW_POWER_ENABLED = "low_power_enabled";
     public static final String WEATHER_ENABLED = "weather_enabled";
     public static final String WEATHER_SHOW_LOCATION = "weather_show_location";
+
+    private static final int REQUEST_PICK_PHOTO_TREE = 4101;
 
     private static final int BACKGROUND = Color.rgb(11, 15, 20);
     private static final int PANEL = Color.rgb(24, 31, 40);
@@ -300,6 +305,25 @@ public final class PhotoFolderActivity extends Activity {
         root.addView(fontSpinner, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
 
+        if (Build.VERSION.SDK_INT >= 21) {
+            Button systemFolderPicker = button("從系統選擇照片資料夾／SD 卡", ACCENT);
+            systemFolderPicker.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    choosePhotoTree();
+                }
+            });
+            LinearLayout.LayoutParams pickerParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+            pickerParams.setMargins(0, dp(10), 0, dp(4));
+            root.addView(systemFolderPicker, pickerParams);
+            TextView pickerHint = text(
+                    "Fire、Android 5 以上請從這裡選取實體 SD 卡內的資料夾。",
+                    14, SECONDARY);
+            pickerHint.setPadding(dp(10), 0, dp(10), dp(4));
+            root.addView(pickerHint);
+        }
+
         LinearLayout pathRow = new LinearLayout(this);
         pathRow.setGravity(Gravity.CENTER_VERTICAL);
         Button up = button("上一層", PANEL);
@@ -343,6 +367,44 @@ public final class PhotoFolderActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
         return pageScroll;
+    }
+
+    private void choosePhotoTree() {
+        if (Build.VERSION.SDK_INT < 21) {
+            Toast.makeText(this, "此系統請使用下方資料夾清單", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_PICK_PHOTO_TREE);
+        } catch (Exception error) {
+            Toast.makeText(this, "這台裝置沒有可用的系統檔案選擇器", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_PICK_PHOTO_TREE || resultCode != RESULT_OK
+                || data == null || data.getData() == null) {
+            return;
+        }
+        Uri treeUri = data.getData();
+        int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        try {
+            getContentResolver().takePersistableUriPermission(treeUri, flags);
+        } catch (SecurityException ignored) {
+            // A few Fire OS file pickers grant a usable one-time URI but do not
+            // advertise persistable permission. Keep it for this session.
+        }
+        selectedFolders.add(treeUri.toString());
+        Toast.makeText(this, "已加入系統選擇的照片資料夾，請按「套用」儲存",
+                Toast.LENGTH_LONG).show();
+        showDirectory();
     }
 
     private void showDirectory() {
@@ -443,7 +505,15 @@ public final class PhotoFolderActivity extends Activity {
     }
 
     private void updateSelectionCount() {
-        selectionText.setText("已選 " + selectedFolders.size() + " 個");
+        int systemTrees = 0;
+        for (String selected : selectedFolders) {
+            if (selected.startsWith("content://")) {
+                systemTrees++;
+            }
+        }
+        selectionText.setText(systemTrees > 0
+                ? "已選 " + selectedFolders.size() + " 個（SD " + systemTrees + "）"
+                : "已選 " + selectedFolders.size() + " 個");
     }
 
     private void saveSelection() {

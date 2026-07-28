@@ -1,4 +1,4 @@
-# QuietPanel v9.0.1
+# QuietPanel v9.0.9
 
 QuietPanel 把 Android 手機變成 Windows 系統監控、快捷控制與相片時鐘面板。v9 將原本分開維護的 USB ADB 與 Bluetooth PAN／Wi-Fi 版本重新合併：Android 畫面、時鐘及通訊協定只有一份，Windows Bridge 依需求使用 ADB 或 Wireless 建置。
 
@@ -15,10 +15,15 @@ QuietPanel 把 Android 手機變成 Windows 系統監控、快捷控制與相片
 
 Windows 端有兩個 Bridge：
 
-- `QuietPanelBridge-v9.0.1-ADB.exe`
-- `QuietPanelBridge-v9.0.1-Wireless.exe`
+- `QuietPanelBridge-v9.0.9-ADB.exe`
+- `QuietPanelBridge-v9.0.9-Wireless.exe`
 
 兩者共用系統監測、控制、天氣、JSON 協定與系統匣程式碼；只替換連線建立方式。
+
+Android 發行檔也分為兩個變體：
+
+- `QuietPanel-v9.0.9-Public.apk`：只含可公開散布的字型，沒有 Storopia。
+- `QuietPanel-v9.0.9-Private-Storopia.apk`：個人測試用，才含 Storopia；請勿公開散布。
 
 ## v9 相片時鐘
 

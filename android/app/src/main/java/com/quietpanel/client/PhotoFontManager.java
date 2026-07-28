@@ -3,6 +3,8 @@ package com.quietpanel.client;
 import android.content.Context;
 import android.graphics.Typeface;
 
+import java.util.Arrays;
+
 final class PhotoFontManager {
     static final int STYLE_STOROPIA = 12;
 
@@ -40,16 +42,19 @@ final class PhotoFontManager {
 
     private static int cachedStyle = -1;
     private static Typeface cachedTypeface;
+    private static Typeface storopiaDegreeTypeface;
 
     private PhotoFontManager() {
     }
 
     static String[] names() {
-        return NAMES.clone();
+        return BuildConfig.INCLUDE_STOROPIA ? NAMES.clone()
+                : Arrays.copyOf(NAMES, STYLE_STOROPIA);
     }
 
     static int normalize(int style) {
-        return style >= 0 && style < ASSET_PATHS.length ? style : STYLE_STOROPIA;
+        int styleCount = BuildConfig.INCLUDE_STOROPIA ? ASSET_PATHS.length : STYLE_STOROPIA;
+        return style >= 0 && style < styleCount ? style : 0;
     }
 
     static boolean usesEnglishDate(int style) {
@@ -75,6 +80,23 @@ final class PhotoFontManager {
         }
         cachedStyle = normalized;
         return cachedTypeface;
+    }
+
+    /**
+     * Storopia itself has no degree glyph. Orbitron's compact geometric ring
+     * is a closer visual companion than the platform sans-serif fallback.
+     */
+    static synchronized Typeface storopiaDegreeFallback(Context context) {
+        if (storopiaDegreeTypeface != null) {
+            return storopiaDegreeTypeface;
+        }
+        try {
+            storopiaDegreeTypeface = Typeface.createFromAsset(context.getAssets(),
+                    "fonts/font_orbitron.ttf");
+        } catch (RuntimeException ignored) {
+            storopiaDegreeTypeface = Typeface.SANS_SERIF;
+        }
+        return storopiaDegreeTypeface;
     }
 
     private static Typeface fallback(int style) {
