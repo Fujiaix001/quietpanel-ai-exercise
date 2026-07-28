@@ -1422,6 +1422,9 @@ public final class MainActivity extends Activity
         if (workPasteButton != null) {
             workPasteButton.setTypeface(typeface);
         }
+        if (workYouTubeButton != null) {
+            workYouTubeButton.setTypeface(typeface);
+        }
         // Weather must share the clock typeface.  applyWeather() applies a
         // fixed system face only to its degree symbol.
         if (weatherTemperature != null) {
