@@ -13,6 +13,7 @@ adb = []
 wireless = []
 
 [dependencies]
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sysinfo = "0.30"
 ureq = { version = "2.12", default-features = false, features = ["tls"] }

@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde_json::{json, Value};
+use serde_json::Value;
+
+use crate::protocol::WeatherSnapshot;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const RETRY_INTERVAL: Duration = Duration::from_secs(10 * 60);
@@ -27,7 +29,7 @@ pub struct WeatherService {
 #[derive(Default)]
 struct WeatherState {
     revision: u64,
-    weather: Option<Value>,
+    weather: Option<WeatherSnapshot>,
 }
 
 impl WeatherService {
@@ -59,23 +61,19 @@ impl WeatherService {
         service
     }
 
-    pub fn snapshot_after(&self, revision: u64) -> Option<(u64, Value)> {
+    pub fn snapshot_after(&self, revision: u64) -> Option<(u64, WeatherSnapshot)> {
         let state = self.state.lock().ok()?;
         let mut weather = state.weather.clone()?;
-        let updated_at = weather
-            .get("updated_at")
-            .and_then(Value::as_u64)
-            .unwrap_or(0);
-        let stale = unix_now().saturating_sub(updated_at) > MAX_AGE_SECONDS;
+        let stale = unix_now().saturating_sub(weather.updated_at) > MAX_AGE_SECONDS;
         let effective_revision = state.revision.saturating_mul(2) + u64::from(stale);
         if effective_revision == revision {
             return None;
         }
-        weather["stale"] = json!(stale);
+        weather.stale = stale;
         Some((effective_revision, weather))
     }
 
-    fn store(&self, weather: Value) {
+    fn store(&self, weather: WeatherSnapshot) {
         if let Ok(mut state) = self.state.lock() {
             state.revision = state.revision.wrapping_add(1).max(1);
             state.weather = Some(weather);
@@ -83,7 +81,7 @@ impl WeatherService {
     }
 }
 
-fn download(config: &WeatherConfig) -> Result<Value, String> {
+fn download(config: &WeatherConfig) -> Result<WeatherSnapshot, String> {
     if !config.latitude.is_finite() || !config.longitude.is_finite() {
         return Err("invalid latitude or longitude".to_string());
     }
@@ -115,7 +113,7 @@ fn download(config: &WeatherConfig) -> Result<Value, String> {
     parse_response(&bytes, &config.location)
 }
 
-fn parse_response(bytes: &[u8], location: &str) -> Result<Value, String> {
+fn parse_response(bytes: &[u8], location: &str) -> Result<WeatherSnapshot, String> {
     let root: Value = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
     let current = root
         .get("current")
@@ -130,14 +128,15 @@ fn parse_response(bytes: &[u8], location: &str) -> Result<Value, String> {
         .and_then(Value::as_i64)
         .ok_or_else(|| "missing weather code".to_string())?;
     let is_day = current.get("is_day").and_then(Value::as_i64).unwrap_or(1) != 0;
-    Ok(json!({
-        "temperature_c": temperature,
-        "code": code,
-        "is_day": is_day,
-        "location": location,
-        "updated_at": unix_now(),
-        "stale": false,
-    }))
+    let code = i32::try_from(code).map_err(|_| "weather code is out of range".to_string())?;
+    Ok(WeatherSnapshot {
+        temperature_c: temperature,
+        code,
+        is_day,
+        location: location.to_string(),
+        updated_at: unix_now(),
+        stale: false,
+    })
 }
 
 fn unix_now() -> u64 {
@@ -155,14 +154,12 @@ fn cache_path() -> PathBuf {
         .join("QuietPanelWeatherCache.json")
 }
 
-fn load_cache() -> Option<Value> {
+fn load_cache() -> Option<WeatherSnapshot> {
     let text = fs::read_to_string(cache_path()).ok()?;
-    let value: Value = serde_json::from_str(&text).ok()?;
-    value.get("updated_at").and_then(Value::as_u64)?;
-    Some(value)
+    serde_json::from_str(&text).ok()
 }
 
-fn save_cache(weather: &Value) -> Result<(), String> {
+fn save_cache(weather: &WeatherSnapshot) -> Result<(), String> {
     let text = serde_json::to_string_pretty(weather).map_err(|error| error.to_string())?;
     fs::write(cache_path(), text).map_err(|error| error.to_string())
 }
@@ -178,9 +175,9 @@ mod tests {
             "Taipei",
         )
         .unwrap();
-        assert_eq!(value["temperature_c"], 29.4);
-        assert_eq!(value["code"], 2);
-        assert_eq!(value["location"], "Taipei");
-        assert_eq!(value["is_day"], true);
+        assert_eq!(value.temperature_c, 29.4);
+        assert_eq!(value.code, 2);
+        assert_eq!(value.location, "Taipei");
+        assert!(value.is_day);
     }
 }

@@ -1,7 +1,8 @@
 use std::time::Instant;
 
-use serde_json::{json, Value};
 use sysinfo::{Disks, Networks, System};
+
+use crate::protocol::{DiskMetrics, StateMessage, SystemMetrics};
 
 pub struct Metrics {
     system: System,
@@ -29,7 +30,7 @@ impl Metrics {
         }
     }
 
-    pub fn snapshot(&mut self) -> Value {
+    pub fn snapshot(&mut self) -> StateMessage {
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
         self.system.refresh_processes();
@@ -77,34 +78,32 @@ impl Metrics {
         let disk_read_mbps = disk_read_bytes as f64 / elapsed / 1_048_576.0;
         let disk_write_mbps = disk_write_bytes as f64 / elapsed / 1_048_576.0;
 
-        let disks: Vec<Value> = self
+        let disks: Vec<DiskMetrics> = self
             .disks
             .list()
             .iter()
             .map(|disk| {
                 let total = disk.total_space() as f64 / 1_073_741_824.0;
                 let available = disk.available_space() as f64 / 1_073_741_824.0;
-                json!({
-                    "name": disk.mount_point().to_string_lossy(),
-                    "totalGB": round_one(total),
-                    "usedGB": round_one((total - available).max(0.0)),
-                })
+                DiskMetrics {
+                    name: disk.mount_point().to_string_lossy().into_owned(),
+                    total_gb: round_one(total),
+                    used_gb: round_one((total - available).max(0.0)),
+                }
             })
             .collect();
 
-        json!({
-            "v": 1,
-            "type": "state",
-            "system": {
-                "cpuPercent": round_one(cpu_percent as f64),
-                "ramPercent": round_one(ram_percent),
-                "networkDownMBps": round_one(down_mbps),
-                "networkUpMBps": round_one(up_mbps),
-                "diskReadMBps": round_one(disk_read_mbps),
-                "diskWriteMBps": round_one(disk_write_mbps),
+        StateMessage::new(
+            SystemMetrics {
+                cpu_percent: round_one(cpu_percent as f64),
+                ram_percent: round_one(ram_percent),
+                network_down_mbps: round_one(down_mbps),
+                network_up_mbps: round_one(up_mbps),
+                disk_read_mbps: round_one(disk_read_mbps),
+                disk_write_mbps: round_one(disk_write_mbps),
             },
-            "disks": disks,
-        })
+            disks,
+        )
     }
 }
 
