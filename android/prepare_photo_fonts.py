@@ -20,6 +20,7 @@ OPEN_FONTS = {
     "font_rounded.ttf": "https://github.com/google/fonts/raw/main/ofl/zenmarugothic/ZenMaruGothic-Medium.ttf",
     "font_kai.ttf": "https://github.com/google/fonts/raw/main/ofl/kleeone/KleeOne-SemiBold.ttf",
     "font_heavy.ttf": "https://github.com/google/fonts/raw/main/ofl/delagothicone/DelaGothicOne-Regular.ttf",
+    "font_huninn.ttf": "https://github.com/justfont/open-huninn-font/releases/download/v2.1/jf-openhuninn-2.1.ttf",
     "font_orbitron.ttf": "https://github.com/google/fonts/raw/main/ofl/orbitron/Orbitron%5Bwght%5D.ttf",
     "font_audiowide.ttf": "https://github.com/google/fonts/raw/main/ofl/audiowide/Audiowide-Regular.ttf",
     "font_oxanium.ttf": "https://github.com/google/fonts/raw/main/ofl/oxanium/Oxanium%5Bwght%5D.ttf",
@@ -28,12 +29,15 @@ OPEN_FONTS = {
 }
 CJK_FONTS = {
     "font_digital.ttf", "font_sans.ttf", "font_serif.ttf",
-    "font_rounded.ttf", "font_kai.ttf", "font_heavy.ttf",
+    "font_rounded.ttf", "font_kai.ttf", "font_heavy.ttf", "font_huninn.ttf",
 }
-LATIN_CHARS = "0123456789:./-_()[],+° ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+LATIN_CHARS = "0123456789:./-_()[],+'&° ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 CJK_DATE_CHARS = "年月日時星期一二三四五六"
 OUTPUT_DIR = Path(__file__).parent / "app" / "src" / "main" / "assets" / "fonts"
 PRIVATE_OUTPUT_DIR = Path(__file__).parent / "app" / "src" / "private" / "assets" / "fonts"
+DERIVED_FAMILY_NAMES = {
+    "font_huninn.ttf": ("LittleClock FenYuan", "LittleClock-FenYuan"),
+}
 
 
 def subset_font(source: Path, target: Path, characters: str) -> None:
@@ -51,10 +55,28 @@ def subset_font(source: Path, target: Path, characters: str) -> None:
         raise ValueError(f"{source.name} lacks required glyphs: {''.join(missing)!r}")
 
 
+def rename_derived_font(target: Path, family_name: str, postscript_name: str) -> None:
+    font = TTFont(str(target))
+    replacements = {
+        1: family_name,
+        3: family_name + " Regular",
+        4: family_name,
+        6: postscript_name,
+        16: family_name,
+    }
+    for record in font["name"].names:
+        replacement = replacements.get(record.nameID)
+        if replacement is not None:
+            record.string = replacement.encode(record.getEncoding(), errors="replace")
+    font.save(str(target))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--storopia-source", type=Path,
                         help="optional local Storopia source; never downloaded")
+    parser.add_argument("--fonts", nargs="+", choices=sorted(OPEN_FONTS),
+                        help="only rebuild the named distributable font subsets")
     args = parser.parse_args()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -62,6 +84,8 @@ def main() -> None:
     cache.mkdir(parents=True, exist_ok=True)
     request_headers = {"User-Agent": "QuietPanel font subset builder"}
     for name, url in OPEN_FONTS.items():
+        if args.fonts and name not in args.fonts:
+            continue
         source = cache / name
         if not source.exists() or source.stat().st_size < 1_000:
             request = urllib.request.Request(url, headers=request_headers)
@@ -69,6 +93,8 @@ def main() -> None:
                 output.write(response.read())
         characters = LATIN_CHARS + (CJK_DATE_CHARS if name in CJK_FONTS else "")
         subset_font(source, OUTPUT_DIR / name, characters)
+        if name in DERIVED_FAMILY_NAMES:
+            rename_derived_font(OUTPUT_DIR / name, *DERIVED_FAMILY_NAMES[name])
         print(f"{name}: {(OUTPUT_DIR / name).stat().st_size} bytes")
 
     if args.storopia_source:

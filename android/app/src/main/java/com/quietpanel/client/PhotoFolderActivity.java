@@ -44,6 +44,8 @@ public final class PhotoFolderActivity extends Activity {
     public static final String PHOTO_FOLDERS = "photo_folders";
     public static final String CLOCK_BACKGROUND = "clock_background";
     public static final String CLOCK_FONT_STYLE = "clock_font_style";
+    public static final String DATE_FONT_STYLE = "date_font_style";
+    public static final String WEATHER_FONT_STYLE = "weather_font_style";
     public static final String CLOCK_TEXT_SCALE = "clock_text_scale";
     public static final String PHOTO_INTERVAL_SECONDS = "photo_interval_seconds";
     public static final String CLOCK_X_RATIO = "clock_x_ratio";
@@ -94,6 +96,8 @@ public final class PhotoFolderActivity extends Activity {
     private int alarmHour;
     private int alarmMinute;
     private Spinner fontSpinner;
+    private Spinner dateFontSpinner;
+    private Spinner weatherFontSpinner;
     private TextView intervalText;
     private SeekBar intervalSeek;
 
@@ -233,6 +237,13 @@ public final class PhotoFolderActivity extends Activity {
         root.addView(weatherCheck);
         root.addView(weatherLocationCheck);
 
+        root.addView(sectionTitle("天氣字型"));
+        weatherFontSpinner = createFontSpinner(clockPrefs.getInt(
+                WEATHER_FONT_STYLE, clockPrefs.getInt(
+                        CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA)));
+        root.addView(weatherFontSpinner, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
+
         root.addView(sectionTitle("鬧鐘"));
         alarmCheck = option("啟用鬧鐘",
                 clockPrefs.getBoolean(AlarmHelper.PREF_ALARM_ENABLED, false));
@@ -282,27 +293,17 @@ public final class PhotoFolderActivity extends Activity {
 
         android.content.SharedPreferences preferences = getSharedPreferences(
                 PREFERENCES, MODE_PRIVATE);
-        root.addView(sectionTitle("時鐘字型"));
-        fontSpinner = new Spinner(this);
-        ArrayAdapter<String> fontAdapter = new ArrayAdapter<String>(
-                this, android.R.layout.simple_spinner_item, PhotoFontManager.names()) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                return styleSpinnerItem(super.getView(position, convertView, parent));
-            }
-
-            @Override
-            public View getDropDownView(int position, View convertView, ViewGroup parent) {
-                return styleSpinnerItem(super.getDropDownView(position, convertView, parent));
-            }
-        };
-        fontAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        fontSpinner.setAdapter(fontAdapter);
-        fontSpinner.setSelection(PhotoFontManager.normalize(preferences.getInt(
-                CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA)));
-        fontSpinner.setBackground(rounded(PANEL));
-        fontSpinner.setPadding(dp(12), 0, dp(12), 0);
+        root.addView(sectionTitle("時間字型"));
+        fontSpinner = createFontSpinner(preferences.getInt(
+                CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA));
         root.addView(fontSpinner, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
+
+        root.addView(sectionTitle("日期字型"));
+        dateFontSpinner = createFontSpinner(preferences.getInt(
+                DATE_FONT_STYLE, preferences.getInt(
+                        CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA)));
+        root.addView(dateFontSpinner, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
 
         if (Build.VERSION.SDK_INT >= 21) {
@@ -367,6 +368,28 @@ public final class PhotoFolderActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
         return pageScroll;
+    }
+
+    private Spinner createFontSpinner(int selectedStyle) {
+        Spinner spinner = new Spinner(this);
+        ArrayAdapter<String> fontAdapter = new ArrayAdapter<String>(
+                this, android.R.layout.simple_spinner_item, PhotoFontManager.names()) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                return styleSpinnerItem(super.getView(position, convertView, parent));
+            }
+
+            @Override
+            public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                return styleSpinnerItem(super.getDropDownView(position, convertView, parent));
+            }
+        };
+        fontAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(fontAdapter);
+        spinner.setSelection(PhotoFontManager.optionIndex(selectedStyle));
+        spinner.setBackground(rounded(PANEL));
+        spinner.setPadding(dp(12), 0, dp(12), 0);
+        return spinner;
     }
 
     private void choosePhotoTree() {
@@ -539,7 +562,12 @@ public final class PhotoFolderActivity extends Activity {
                 .putBoolean(AlarmHelper.PREF_ALARM_REPEAT, alarmRepeatCheck.isChecked())
                 .putInt(AlarmHelper.PREF_ALARM_HOUR, alarmHour)
                 .putInt(AlarmHelper.PREF_ALARM_MINUTE, alarmMinute)
-                .putInt(CLOCK_FONT_STYLE, fontSpinner.getSelectedItemPosition())
+                .putInt(CLOCK_FONT_STYLE,
+                        PhotoFontManager.styleAtOptionIndex(fontSpinner.getSelectedItemPosition()))
+                .putInt(DATE_FONT_STYLE,
+                        PhotoFontManager.styleAtOptionIndex(dateFontSpinner.getSelectedItemPosition()))
+                .putInt(WEATHER_FONT_STYLE,
+                        PhotoFontManager.styleAtOptionIndex(weatherFontSpinner.getSelectedItemPosition()))
                 .putInt(PHOTO_INTERVAL_SECONDS, 10 + intervalSeek.getProgress() * 5)
                 .apply();
         AlarmHelper.updateAlarmSchedule(this);

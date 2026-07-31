@@ -201,6 +201,8 @@ public final class MainActivity extends Activity
     private float clockTextScale = 1.0f;
     private float effectiveClockTextScale = 1.0f;
     private int clockFontStyle = PhotoFontManager.STYLE_STOROPIA;
+    private int dateFontStyle = PhotoFontManager.STYLE_STOROPIA;
+    private int weatherFontStyle = PhotoFontManager.STYLE_STOROPIA;
     private View.OnTouchListener clockTouchListener;
     private boolean clockBackgroundEnabled = true;
     private boolean lowPowerEnabled;
@@ -1363,6 +1365,10 @@ public final class MainActivity extends Activity
                 PhotoFolderActivity.LOW_POWER_ENABLED, false);
         clockFontStyle = PhotoFontManager.normalize(preferences.getInt(
                 PhotoFolderActivity.CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA));
+        dateFontStyle = PhotoFontManager.normalize(preferences.getInt(
+                PhotoFolderActivity.DATE_FONT_STYLE, clockFontStyle));
+        weatherFontStyle = PhotoFontManager.normalize(preferences.getInt(
+                PhotoFolderActivity.WEATHER_FONT_STYLE, clockFontStyle));
         // This ADB edition deliberately omits optional image effects. Reset
         // stale preferences from newer wireless builds rather than applying
         // them silently.
@@ -1409,32 +1415,32 @@ public final class MainActivity extends Activity
     }
 
     private void applyClockFontStyle() {
-        Typeface typeface = PhotoFontManager.get(this, clockFontStyle);
+        Typeface timeTypeface = PhotoFontManager.get(this, clockFontStyle);
+        Typeface dateTypeface = PhotoFontManager.get(this, dateFontStyle);
+        Typeface weatherTypeface = PhotoFontManager.get(this, weatherFontStyle);
         if (photoTime != null) {
-            photoTime.setTypeface(typeface);
+            photoTime.setTypeface(timeTypeface);
         }
         if (photoDate != null) {
-            photoDate.setTypeface(typeface);
+            photoDate.setTypeface(dateTypeface);
         }
         if (workScreenshotButton != null) {
-            workScreenshotButton.setTypeface(typeface);
+            workScreenshotButton.setTypeface(timeTypeface);
         }
         if (workPasteButton != null) {
-            workPasteButton.setTypeface(typeface);
+            workPasteButton.setTypeface(timeTypeface);
         }
         if (workYouTubeButton != null) {
-            workYouTubeButton.setTypeface(typeface);
+            workYouTubeButton.setTypeface(timeTypeface);
         }
-        // Weather must share the clock typeface.  applyWeather() applies a
-        // fixed system face only to its degree symbol.
         if (weatherTemperature != null) {
-            weatherTemperature.setTypeface(typeface);
+            weatherTemperature.setTypeface(weatherTypeface);
         }
         if (weatherLocation != null) {
-            weatherLocation.setTypeface(typeface);
+            weatherLocation.setTypeface(weatherTypeface);
         }
         if (alarmTimeText != null) {
-            alarmTimeText.setTypeface(typeface);
+            alarmTimeText.setTypeface(timeTypeface);
         }
         updatePhotoClock();
     }
@@ -1875,7 +1881,7 @@ public final class MainActivity extends Activity
             photoTime.setText(photoTimeFormat.format(photoClockDate));
         }
         if (photoDate != null) {
-            SimpleDateFormat format = PhotoFontManager.usesEnglishDate(clockFontStyle)
+            SimpleDateFormat format = PhotoFontManager.usesEnglishDate(dateFontStyle)
                     ? photoDateEnglishFormat : photoDateChineseFormat;
             photoDate.setText(format.format(photoClockDate));
         }
@@ -1899,9 +1905,11 @@ public final class MainActivity extends Activity
         String temperatureText = String.format(Locale.US, "%.0f°C", temperature);
         SpannableString styledTemperature = new SpannableString(temperatureText);
         int degreeIndex = temperatureText.indexOf('\u00B0');
-        if (clockFontStyle == PhotoFontManager.STYLE_STOROPIA && degreeIndex >= 0) {
+        if (PhotoFontManager.isStoropiaStyle(weatherFontStyle) && degreeIndex >= 0) {
             styledTemperature.setSpan(new FixedTypefaceSpan(
-                    PhotoFontManager.storopiaDegreeFallback(this)), degreeIndex,
+                    PhotoFontManager.storopiaDegreeFallback(
+                            this,
+                            weatherFontStyle == PhotoFontManager.STYLE_STOROPIA_SYNTHETIC_BOLD)), degreeIndex,
                     degreeIndex + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         weatherTemperature.setText(styledTemperature);

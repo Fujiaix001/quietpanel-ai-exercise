@@ -4,9 +4,13 @@ import android.content.Context;
 import android.graphics.Typeface;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 final class PhotoFontManager {
     static final int STYLE_STOROPIA = 12;
+    static final int STYLE_FEN_YUAN = 13;
+    static final int STYLE_STOROPIA_SYNTHETIC_BOLD = 14;
 
     private static final String[] NAMES = {
             "系統粗體",
@@ -21,7 +25,9 @@ final class PhotoFontManager {
             "Oxanium",
             "Saira Stencil One",
             "Zen Dots",
-            "Storopia（測試）"
+            "Storopia（測試）",
+            "LittleClock 粉圓體",
+            "Storopia（合成粗體，測試）"
     };
 
     private static final String[] ASSET_PATHS = {
@@ -37,66 +43,101 @@ final class PhotoFontManager {
             "fonts/font_oxanium.ttf",
             "fonts/font_sairastencil.ttf",
             "fonts/font_zendots.ttf",
+            "fonts/Storopia-Subset.ttf",
+            "fonts/font_huninn.ttf",
             "fonts/Storopia-Subset.ttf"
     };
 
-    private static int cachedStyle = -1;
-    private static Typeface cachedTypeface;
+    private static final Map<Integer, Typeface> CACHE = new HashMap<Integer, Typeface>();
     private static Typeface storopiaDegreeTypeface;
 
     private PhotoFontManager() {
     }
 
     static String[] names() {
-        return BuildConfig.INCLUDE_STOROPIA ? NAMES.clone()
-                : Arrays.copyOf(NAMES, STYLE_STOROPIA);
+        if (BuildConfig.INCLUDE_STOROPIA) {
+            return NAMES.clone();
+        }
+        String[] publicNames = Arrays.copyOf(NAMES, STYLE_STOROPIA + 1);
+        publicNames[STYLE_STOROPIA] = NAMES[STYLE_FEN_YUAN];
+        return publicNames;
     }
 
     static int normalize(int style) {
-        int styleCount = BuildConfig.INCLUDE_STOROPIA ? ASSET_PATHS.length : STYLE_STOROPIA;
-        return style >= 0 && style < styleCount ? style : 0;
+        if ((style == STYLE_STOROPIA || style == STYLE_STOROPIA_SYNTHETIC_BOLD)
+                && !BuildConfig.INCLUDE_STOROPIA) {
+            return 0;
+        }
+        return style >= 0 && style < ASSET_PATHS.length ? style : 0;
+    }
+
+    static int optionIndex(int style) {
+        int normalized = normalize(style);
+        return !BuildConfig.INCLUDE_STOROPIA && normalized == STYLE_FEN_YUAN
+                ? STYLE_STOROPIA : normalized;
+    }
+
+    static int styleAtOptionIndex(int optionIndex) {
+        if (!BuildConfig.INCLUDE_STOROPIA && optionIndex == STYLE_STOROPIA) {
+            return STYLE_FEN_YUAN;
+        }
+        return normalize(optionIndex);
+    }
+
+    static boolean isStoropiaStyle(int style) {
+        int normalized = normalize(style);
+        return normalized == STYLE_STOROPIA || normalized == STYLE_STOROPIA_SYNTHETIC_BOLD;
     }
 
     static boolean usesEnglishDate(int style) {
-        return normalize(style) >= 7;
+        int normalizedStyle = normalize(style);
+        return normalizedStyle >= 7 && normalizedStyle != STYLE_FEN_YUAN;
     }
 
     static synchronized Typeface get(Context context, int style) {
         int normalized = normalize(style);
-        if (cachedStyle == normalized && cachedTypeface != null) {
-            return cachedTypeface;
+        Typeface cached = CACHE.get(normalized);
+        if (cached != null) {
+            return cached;
         }
 
-        Typeface fallback = fallback(normalized);
-        String assetPath = ASSET_PATHS[normalized];
+        int sourceStyle = normalized == STYLE_STOROPIA_SYNTHETIC_BOLD
+                ? STYLE_STOROPIA : normalized;
+        Typeface fallback = fallback(sourceStyle);
+        String assetPath = ASSET_PATHS[sourceStyle];
+        Typeface result = fallback;
         if (assetPath == null) {
-            cachedTypeface = fallback;
+            result = fallback;
         } else {
             try {
-                cachedTypeface = Typeface.createFromAsset(context.getAssets(), assetPath);
+                result = Typeface.createFromAsset(context.getAssets(), assetPath);
             } catch (RuntimeException ignored) {
-                cachedTypeface = fallback;
+                result = fallback;
             }
         }
-        cachedStyle = normalized;
-        return cachedTypeface;
+        if (normalized == STYLE_STOROPIA_SYNTHETIC_BOLD) {
+            result = Typeface.create(result, Typeface.BOLD);
+        }
+        CACHE.put(normalized, result);
+        return result;
     }
 
     /**
      * Storopia itself has no degree glyph. Orbitron's compact geometric ring
      * is a closer visual companion than the platform sans-serif fallback.
      */
-    static synchronized Typeface storopiaDegreeFallback(Context context) {
-        if (storopiaDegreeTypeface != null) {
-            return storopiaDegreeTypeface;
+    static synchronized Typeface storopiaDegreeFallback(Context context, boolean syntheticBold) {
+        if (storopiaDegreeTypeface == null) {
+            try {
+                storopiaDegreeTypeface = Typeface.createFromAsset(context.getAssets(),
+                        "fonts/font_orbitron.ttf");
+            } catch (RuntimeException ignored) {
+                storopiaDegreeTypeface = Typeface.SANS_SERIF;
+            }
         }
-        try {
-            storopiaDegreeTypeface = Typeface.createFromAsset(context.getAssets(),
-                    "fonts/font_orbitron.ttf");
-        } catch (RuntimeException ignored) {
-            storopiaDegreeTypeface = Typeface.SANS_SERIF;
-        }
-        return storopiaDegreeTypeface;
+        return syntheticBold
+                ? Typeface.create(storopiaDegreeTypeface, Typeface.BOLD)
+                : storopiaDegreeTypeface;
     }
 
     private static Typeface fallback(int style) {

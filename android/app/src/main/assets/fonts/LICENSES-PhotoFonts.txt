@@ -47,6 +47,20 @@ Designer: Artakana
 Source: https://fonts.google.com/specimen/Dela+Gothic+One
 License: SIL Open Font License 1.1
 
+Font: jf open 粉圓 (jf open-huninn), subset for QuietPanel
+File: font_huninn.ttf
+Designer: justfont
+Source: https://github.com/justfont/open-huninn-font
+Upstream version: 2.1
+Derivative family name: LittleClock FenYuan
+Copyright (c) 2010 MOTOYA CO.,LTD.
+Copyright (c) 2011-2016 The Varela Round Project Authors
+Copyright (c) 2020-2024 The jf open huninn font is redistributed by
+justfont Co., LTD., with Reserved Font Names 'open huninn' and 'huninn'.
+The Hanzi part of the upstream project was derived from Kosugi Maru under
+Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+License: SIL Open Font License 1.1
+
 Font: Audiowide
 File: font_audiowide.ttf
 Designer: Astigmatic
