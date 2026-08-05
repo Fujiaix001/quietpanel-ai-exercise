@@ -7,6 +7,7 @@ Storopia is never downloaded; pass a locally licensed source explicitly.
 import argparse
 import tempfile
 import urllib.request
+import zipfile
 from pathlib import Path
 
 from fontTools import subset
@@ -27,9 +28,12 @@ OPEN_FONTS = {
     "font_sairastencil.ttf": "https://github.com/google/fonts/raw/main/ofl/sairastencilone/SairaStencilOne-Regular.ttf",
     "font_zendots.ttf": "https://github.com/google/fonts/raw/main/ofl/zendots/ZenDots-Regular.ttf",
 }
+IANSUI_FONT = "font_iansui.ttf"
+IANSUI_URL = "https://github.com/ButTaiwan/iansui/releases/download/v1.020/iansui.zip"
 CJK_FONTS = {
     "font_digital.ttf", "font_sans.ttf", "font_serif.ttf",
     "font_rounded.ttf", "font_kai.ttf", "font_heavy.ttf", "font_huninn.ttf",
+    IANSUI_FONT,
 }
 LATIN_CHARS = "0123456789:./-_()[],+'&° ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 CJK_DATE_CHARS = "年月日時星期一二三四五六"
@@ -75,7 +79,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--storopia-source", type=Path,
                         help="optional local Storopia source; never downloaded")
-    parser.add_argument("--fonts", nargs="+", choices=sorted(OPEN_FONTS),
+    parser.add_argument("--fonts", nargs="+", choices=sorted(set(OPEN_FONTS) | {IANSUI_FONT}),
                         help="only rebuild the named distributable font subsets")
     args = parser.parse_args()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -96,6 +100,19 @@ def main() -> None:
         if name in DERIVED_FAMILY_NAMES:
             rename_derived_font(OUTPUT_DIR / name, *DERIVED_FAMILY_NAMES[name])
         print(f"{name}: {(OUTPUT_DIR / name).stat().st_size} bytes")
+
+    if not args.fonts or IANSUI_FONT in args.fonts:
+        archive_path = cache / "iansui-v1.020.zip"
+        source = cache / "Iansui-Regular.ttf"
+        if not archive_path.exists() or archive_path.stat().st_size < 1_000:
+            request = urllib.request.Request(IANSUI_URL, headers=request_headers)
+            with urllib.request.urlopen(request) as response, archive_path.open("wb") as output:
+                output.write(response.read())
+        with zipfile.ZipFile(archive_path) as archive:
+            with archive.open("Iansui-Regular.ttf") as archived_font, source.open("wb") as output:
+                output.write(archived_font.read())
+        subset_font(source, OUTPUT_DIR / IANSUI_FONT, LATIN_CHARS + CJK_DATE_CHARS)
+        print(f"{IANSUI_FONT}: {(OUTPUT_DIR / IANSUI_FONT).stat().st_size} bytes")
 
     if args.storopia_source:
         source = args.storopia_source.resolve(strict=True)

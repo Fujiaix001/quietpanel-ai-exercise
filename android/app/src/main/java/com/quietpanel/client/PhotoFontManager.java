@@ -11,6 +11,7 @@ final class PhotoFontManager {
     static final int STYLE_STOROPIA = 12;
     static final int STYLE_FEN_YUAN = 13;
     static final int STYLE_STOROPIA_SYNTHETIC_BOLD = 14;
+    static final int STYLE_IANSUI = 15;
 
     private static final String[] NAMES = {
             "系統粗體",
@@ -27,7 +28,8 @@ final class PhotoFontManager {
             "Zen Dots",
             "Storopia（測試）",
             "LittleClock 粉圓體",
-            "Storopia（合成粗體，測試）"
+            "Storopia（合成粗體，測試）",
+            "芫荽 Iansui"
     };
 
     private static final String[] ASSET_PATHS = {
@@ -45,7 +47,8 @@ final class PhotoFontManager {
             "fonts/font_zendots.ttf",
             "fonts/Storopia-Subset.ttf",
             "fonts/font_huninn.ttf",
-            "fonts/Storopia-Subset.ttf"
+            "fonts/Storopia-Subset.ttf",
+            "fonts/font_iansui.ttf"
     };
 
     private static final Map<Integer, Typeface> CACHE = new HashMap<Integer, Typeface>();
@@ -58,8 +61,9 @@ final class PhotoFontManager {
         if (BuildConfig.INCLUDE_STOROPIA) {
             return NAMES.clone();
         }
-        String[] publicNames = Arrays.copyOf(NAMES, STYLE_STOROPIA + 1);
+        String[] publicNames = Arrays.copyOf(NAMES, STYLE_STOROPIA + 2);
         publicNames[STYLE_STOROPIA] = NAMES[STYLE_FEN_YUAN];
+        publicNames[STYLE_STOROPIA + 1] = NAMES[STYLE_IANSUI];
         return publicNames;
     }
 
@@ -73,13 +77,19 @@ final class PhotoFontManager {
 
     static int optionIndex(int style) {
         int normalized = normalize(style);
-        return !BuildConfig.INCLUDE_STOROPIA && normalized == STYLE_FEN_YUAN
-                ? STYLE_STOROPIA : normalized;
+        if (!BuildConfig.INCLUDE_STOROPIA) {
+            if (normalized == STYLE_FEN_YUAN) return STYLE_STOROPIA;
+            if (normalized == STYLE_IANSUI) return STYLE_STOROPIA + 1;
+        }
+        return normalized;
     }
 
     static int styleAtOptionIndex(int optionIndex) {
         if (!BuildConfig.INCLUDE_STOROPIA && optionIndex == STYLE_STOROPIA) {
             return STYLE_FEN_YUAN;
+        }
+        if (!BuildConfig.INCLUDE_STOROPIA && optionIndex == STYLE_STOROPIA + 1) {
+            return STYLE_IANSUI;
         }
         return normalize(optionIndex);
     }
@@ -91,7 +101,9 @@ final class PhotoFontManager {
 
     static boolean usesEnglishDate(int style) {
         int normalizedStyle = normalize(style);
-        return normalizedStyle >= 7 && normalizedStyle != STYLE_FEN_YUAN;
+        return normalizedStyle >= 7
+                && normalizedStyle != STYLE_FEN_YUAN
+                && normalizedStyle != STYLE_IANSUI;
     }
 
     static synchronized Typeface get(Context context, int style) {

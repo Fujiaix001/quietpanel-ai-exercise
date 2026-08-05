@@ -61,6 +61,7 @@ public final class PhotoFolderActivity extends Activity {
     public static final String LOW_POWER_ENABLED = "low_power_enabled";
     public static final String WEATHER_ENABLED = "weather_enabled";
     public static final String WEATHER_SHOW_LOCATION = "weather_show_location";
+    public static final String WEATHER_COMPACT_MODE = "weather_compact_mode";
 
     private static final int REQUEST_PICK_PHOTO_TREE = 4101;
 
@@ -86,6 +87,7 @@ public final class PhotoFolderActivity extends Activity {
     private CheckBox lowPowerCheck;
     private CheckBox weatherCheck;
     private CheckBox weatherLocationCheck;
+    private CheckBox weatherCompactCheck;
     private CheckBox alarmCheck;
     private CheckBox alarmRepeatCheck;
     private Button nightStartButton;
@@ -234,8 +236,21 @@ public final class PhotoFolderActivity extends Activity {
                 clockPrefs.getBoolean(WEATHER_ENABLED, true));
         weatherLocationCheck = option("顯示地名",
                 clockPrefs.getBoolean(WEATHER_SHOW_LOCATION, false));
+        weatherCompactCheck = option("精簡排列（無地名時與日期同列）",
+                clockPrefs.getBoolean(WEATHER_COMPACT_MODE, true));
+        weatherCompactCheck.setEnabled(!weatherLocationCheck.isChecked());
+        weatherCompactCheck.setAlpha(weatherLocationCheck.isChecked() ? 0.45f : 1.0f);
+        weatherLocationCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                boolean available = !weatherLocationCheck.isChecked();
+                weatherCompactCheck.setEnabled(available);
+                weatherCompactCheck.setAlpha(available ? 1.0f : 0.45f);
+            }
+        });
         root.addView(weatherCheck);
         root.addView(weatherLocationCheck);
+        root.addView(weatherCompactCheck);
 
         root.addView(sectionTitle("天氣字型"));
         weatherFontSpinner = createFontSpinner(clockPrefs.getInt(
@@ -415,11 +430,25 @@ public final class PhotoFolderActivity extends Activity {
                 || data == null || data.getData() == null) {
             return;
         }
+        if (Build.VERSION.SDK_INT < 21) {
+            return;
+        }
         Uri treeUri = data.getData();
-        int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        int grantedFlags = data.getFlags();
+        boolean canRead = (grantedFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0;
+        boolean canWrite = (grantedFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
         try {
-            getContentResolver().takePersistableUriPermission(treeUri, flags);
+            if (canRead && canWrite) {
+                getContentResolver().takePersistableUriPermission(treeUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            } else if (canRead) {
+                getContentResolver().takePersistableUriPermission(treeUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } else if (canWrite) {
+                getContentResolver().takePersistableUriPermission(treeUri,
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            }
         } catch (SecurityException ignored) {
             // A few Fire OS file pickers grant a usable one-time URI but do not
             // advertise persistable permission. Keep it for this session.
@@ -558,6 +587,7 @@ public final class PhotoFolderActivity extends Activity {
                 .putBoolean(LOW_POWER_ENABLED, lowPowerCheck.isChecked())
                 .putBoolean(WEATHER_ENABLED, weatherCheck.isChecked())
                 .putBoolean(WEATHER_SHOW_LOCATION, weatherLocationCheck.isChecked())
+                .putBoolean(WEATHER_COMPACT_MODE, weatherCompactCheck.isChecked())
                 .putBoolean(AlarmHelper.PREF_ALARM_ENABLED, alarmCheck.isChecked())
                 .putBoolean(AlarmHelper.PREF_ALARM_REPEAT, alarmRepeatCheck.isChecked())
                 .putInt(AlarmHelper.PREF_ALARM_HOUR, alarmHour)

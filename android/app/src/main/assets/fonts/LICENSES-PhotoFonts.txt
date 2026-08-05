@@ -47,6 +47,13 @@ Designer: Artakana
 Source: https://fonts.google.com/specimen/Dela+Gothic+One
 License: SIL Open Font License 1.1
 
+Font: Iansui (芫荽), subset for QuietPanel
+File: font_iansui.ttf
+Designer: ButTaiwan
+Source: https://github.com/ButTaiwan/iansui
+Upstream version: 1.020
+License: SIL Open Font License 1.1
+
 Font: jf open 粉圓 (jf open-huninn), subset for QuietPanel
 File: font_huninn.ttf
 Designer: justfont

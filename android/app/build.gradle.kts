@@ -12,8 +12,8 @@ android {
         applicationId = "com.quietpanel.client"
         minSdk = 17
         targetSdk = 36
-        versionCode = 9011
-        versionName = "9.0.11"
+        versionCode = 9012
+        versionName = "9.0.12"
     }
 
     flavorDimensions += "distribution"
@@ -73,6 +73,7 @@ val verifyPhotoFonts by tasks.registering {
             "font_digital.ttf",
             "font_heavy.ttf",
             "font_huninn.ttf",
+            "font_iansui.ttf",
             "font_kai.ttf",
             "font_orbitron.ttf",
             "font_oxanium.ttf",

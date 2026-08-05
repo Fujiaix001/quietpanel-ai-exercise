@@ -1,4 +1,9 @@
-# QuietPanel v9.0.10
+# QuietPanel v9.0.12
+
+## v9.0.12 版本修正
+
+- 修正第三頁時鐘／日期面板在重新啟動後回到左上角的問題。
+- 時鐘拖曳位置會持久化保存，進入第三頁並完成版面配置後自動恢復。
 
 QuietPanel 把 Android 手機變成 Windows 系統監控、快捷控制與相片時鐘面板。v9 將原本分開維護的 USB ADB 與 Bluetooth PAN／Wi-Fi 版本重新合併：Android 畫面、時鐘及通訊協定只有一份，Windows Bridge 依需求使用 ADB 或 Wireless 建置。
 
@@ -15,15 +20,15 @@ QuietPanel 把 Android 手機變成 Windows 系統監控、快捷控制與相片
 
 Windows 端有兩個 Bridge：
 
-- `QuietPanelBridge-v9.0.10-ADB.exe`
-- `QuietPanelBridge-v9.0.10-Wireless.exe`
+- `QuietPanelBridge-v9.0.12-ADB.exe`
+- `QuietPanelBridge-v9.0.12-Wireless.exe`
 
 兩者共用系統監測、控制、天氣、JSON 協定與系統匣程式碼；只替換連線建立方式。
 
 Android 發行檔也分為兩個變體：
 
-- `QuietPanel-v9.0.10-Public.apk`：只含可公開散布的字型，沒有 Storopia。
-- `QuietPanel-v9.0.10-Private-Storopia.apk`：個人測試用，才含 Storopia；請勿公開散布。
+- `QuietPanel-v9.0.12-Public.apk`：只含可公開散布的字型，沒有 Storopia。
+- `QuietPanel-v9.0.12-Private-Storopia.apk`：個人測試用，才含 Storopia；請勿公開散布。
 
 ## v9 相片時鐘
 
@@ -31,13 +36,13 @@ LittleClock v3.0.2 的時鐘能力已整合到 QuietPanel 相片頁：
 
 - 時間與日期可分別顯示或隱藏。
 - 時鐘可拖曳、雙指縮放並記住橫／直向位置。
-- 可選字型及半透明底板。
+- 可選字型（含芫荽 Iansui）及半透明底板。
 - 每三分鐘微幅位移，降低長時間顯示的烙印風險。
 - 可設定夜間暗屏時段；觸控後暫時喚醒 30 秒。
 - 可選環境光自動亮度。
 - 低耗電模式停用相片平移動畫。
 - 支援每日或單次鬧鐘、貪睡及新舊 Android 響鈴流程。
-- 顯示由 Windows Bridge 提供的天氣圖示、溫度及選用地名。
+- 顯示由 Windows Bridge 提供的天氣圖示、溫度及選用地名；無地名時可與日期同列精簡顯示。
 
 相片仍只從手機本機選定的資料夾讀取，不會傳到電腦。
 

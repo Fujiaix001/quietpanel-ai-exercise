@@ -163,6 +163,7 @@ public final class MainActivity extends Activity
     private TextView photoStatus;
     private TextView photoTime;
     private TextView photoDate;
+    private LinearLayout dateRow;
     private LinearLayout weatherRow;
     private WeatherIconView weatherIcon;
     private TextView weatherTemperature;
@@ -203,6 +204,7 @@ public final class MainActivity extends Activity
     private int clockFontStyle = PhotoFontManager.STYLE_STOROPIA;
     private int dateFontStyle = PhotoFontManager.STYLE_STOROPIA;
     private int weatherFontStyle = PhotoFontManager.STYLE_STOROPIA;
+    private boolean weatherCompactLayout;
     private View.OnTouchListener clockTouchListener;
     private boolean clockBackgroundEnabled = true;
     private boolean lowPowerEnabled;
@@ -317,9 +319,11 @@ public final class MainActivity extends Activity
     }
 
     private void requestModernRuntimePermissions() {
+        if (android.os.Build.VERSION.SDK_INT < 31) {
+            return;
+        }
         ArrayList<String> permissions = new ArrayList<String>();
-        if (android.os.Build.VERSION.SDK_INT >= 31
-                && checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+        if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             permissions.add(android.Manifest.permission.BLUETOOTH_CONNECT);
         }
@@ -748,7 +752,12 @@ public final class MainActivity extends Activity
         photoDate = makeText("", PHOTO_DATE_TEXT_SIZE_SP, Color.WHITE, Gravity.RIGHT);
         photoDate.setIncludeFontPadding(false);
         photoDate.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
-        clockPanel.addView(photoDate, new LinearLayout.LayoutParams(
+        dateRow = new LinearLayout(this);
+        dateRow.setGravity(Gravity.RIGHT | Gravity.BOTTOM);
+        dateRow.addView(photoDate, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        clockPanel.addView(dateRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -1241,6 +1250,18 @@ public final class MainActivity extends Activity
             if (clockPanel != null) {
                 clockPanel.setOnTouchListener(currentPage == PHOTO_PAGE ? clockTouchListener : null);
             }
+            // The photo page is GONE while the app starts on page 1, so its
+            // initial posted layout pass has no usable bounds. Restore the
+            // saved clock position after this page becomes visible and the
+            // shared photo container has been attached to its final parent.
+            if (photoContentContainer != null) {
+                photoContentContainer.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        applyClockPosition();
+                    }
+                });
+            }
             if (currentPage != PHOTO_PAGE) {
                 hidePhotoFolderButtonImmediately();
             }
@@ -1333,12 +1354,13 @@ public final class MainActivity extends Activity
         }
         int maxLeft = Math.max(1, photoContentContainer.getWidth() - clockPanel.getWidth());
         int maxTop = Math.max(1, photoContentContainer.getHeight() - clockPanel.getHeight());
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) clockPanel.getLayoutParams();
         getSharedPreferences(PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
                 .edit()
                 .putFloat(clockOrientationKey(PhotoFolderActivity.CLOCK_X_RATIO),
-                        clampRatio((float) clockPanel.getLeft() / maxLeft))
+                        clampRatio((float) params.leftMargin / maxLeft))
                 .putFloat(clockOrientationKey(PhotoFolderActivity.CLOCK_Y_RATIO),
-                        clampRatio((float) clockPanel.getTop() / maxTop))
+                        clampRatio((float) params.topMargin / maxTop))
                 .putBoolean(clockOrientationKey(PhotoFolderActivity.CLOCK_POSITION_CUSTOMIZED), true)
                 .apply();
     }
@@ -1536,7 +1558,8 @@ public final class MainActivity extends Activity
             photoDate.setTextSize(PHOTO_DATE_TEXT_SIZE_SP * displayScale);
         }
         if (weatherTemperature != null) {
-            weatherTemperature.setTextSize(20.0f * displayScale);
+            weatherTemperature.setTextSize(
+                    (weatherCompactLayout ? 18.0f : 20.0f) * displayScale);
         }
         if (weatherLocation != null) {
             weatherLocation.setTextSize(14.0f * displayScale);
@@ -1548,7 +1571,8 @@ public final class MainActivity extends Activity
         // Scale the compact supporting rows with their text.  These dimensions
         // leave enough room for the glyphs, but remove the oversized blank
         // line spacing that the earlier 34/28dp rows introduced.
-        int weatherSize = dp(Math.max(1, Math.round(24.0f * displayScale)));
+        float weatherBaseSize = weatherCompactLayout ? 22.0f : 24.0f;
+        int weatherSize = dp(Math.max(1, Math.round(weatherBaseSize * displayScale)));
         int alarmTextHeight = dp(Math.max(1, Math.round(20.0f * displayScale)));
         int alarmIconSize = dp(Math.max(1, Math.round(14.0f * displayScale)));
         resizeView(weatherIcon, weatherSize, weatherSize);
@@ -1917,7 +1941,35 @@ public final class MainActivity extends Activity
                 PhotoFolderActivity.WEATHER_SHOW_LOCATION, false);
         weatherLocation.setText(showLocation ? weather.optString("location", "") : "");
         weatherLocation.setVisibility(showLocation ? View.VISIBLE : View.GONE);
+        boolean compact = preferences.getBoolean(
+                PhotoFolderActivity.WEATHER_COMPACT_MODE, true) && !showLocation;
+        applyWeatherLayout(compact);
         weatherRow.setVisibility(View.VISIBLE);
+    }
+
+    private void applyWeatherLayout(boolean compact) {
+        if (weatherRow == null || dateRow == null || clockPanel == null) return;
+        ViewGroup currentParent = weatherRow.getParent() instanceof ViewGroup
+                ? (ViewGroup) weatherRow.getParent() : null;
+        ViewGroup targetParent = compact ? dateRow : clockPanel;
+        if (currentParent != targetParent) {
+            if (currentParent != null) currentParent.removeView(weatherRow);
+            if (compact) {
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                params.gravity = Gravity.BOTTOM;
+                params.setMargins(0, 0, dp(8), 0);
+                dateRow.addView(weatherRow, 0, params);
+            } else {
+                int weatherIndex = clockPanel.indexOfChild(dateRow) + 1;
+                clockPanel.addView(weatherRow, weatherIndex, new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+            }
+        }
+        weatherCompactLayout = compact;
+        setClockDisplayScale(effectiveClockTextScale);
     }
 
     private void hideWeather() {
@@ -2102,6 +2154,7 @@ public final class MainActivity extends Activity
      * only reliable way to access removable SD cards on Fire OS and Android
      * scoped-storage devices.
      */
+    @android.annotation.TargetApi(21)
     private void collectDocumentTreePhotos(
             Uri treeUri,
             Set<String> visitedDirectories,
@@ -2122,6 +2175,7 @@ public final class MainActivity extends Activity
         }
     }
 
+    @android.annotation.TargetApi(21)
     private void collectDocumentDirectoryPhotos(
             Uri treeUri,
             Uri directoryUri,
