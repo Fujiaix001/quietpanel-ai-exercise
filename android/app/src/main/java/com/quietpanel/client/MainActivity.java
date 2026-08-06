@@ -84,6 +84,7 @@ public final class MainActivity extends Activity
     private static final Uri PRIVATE_ALBUM_URI = Uri.parse(
             "content://com.quietphoto.privatealbum.photos/photos");
     private static final String PRIVATE_ALBUM_CONTENT_URI = "content_uri";
+    private static final String PRIVATE_ALBUM_SOURCE_FOLDER = "source_folder";
     // Keep the complete selected album.  A slideshow must not silently omit
     // images merely because the folder happens to contain a large collection.
     private static final int MAX_PHOTO_FILES = Integer.MAX_VALUE;
@@ -2023,6 +2024,19 @@ public final class MainActivity extends Activity
                 .getBoolean(PhotoFolderActivity.PRIVATE_ALBUM_ENABLED, false);
     }
 
+    /** Null means all private-album folders (the legacy/default behavior). */
+    private Set<String> getSelectedPrivateAlbumFolders() {
+        android.content.SharedPreferences preferences = getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
+        if (!preferences.getBoolean(PhotoFolderActivity.PRIVATE_ALBUM_FOLDERS_CUSTOMIZED,
+                false)) {
+            return null;
+        }
+        Set<String> saved = preferences.getStringSet(
+                PhotoFolderActivity.PRIVATE_ALBUM_FOLDERS, null);
+        return saved == null ? new HashSet<String>() : new HashSet<String>(saved);
+    }
+
     private String buildPhotoFolderSignature(Set<String> folders) {
         if (folders.isEmpty()) {
             return isPrivateAlbumEnabled() ? "@private-album" : "@default";
@@ -2030,7 +2044,22 @@ public final class MainActivity extends Activity
         List<String> orderedFolders = new ArrayList<String>(folders);
         Collections.sort(orderedFolders);
         String signature = TextUtils.join("\n", orderedFolders);
-        return isPrivateAlbumEnabled() ? signature + "\n@private-album" : signature;
+        if (!isPrivateAlbumEnabled()) {
+            return signature;
+        }
+        StringBuilder result = new StringBuilder(signature).append("\n@private-album");
+        Set<String> privateFolders = getSelectedPrivateAlbumFolders();
+        if (privateFolders != null) {
+            List<String> orderedPrivateFolders = new ArrayList<String>(privateFolders);
+            Collections.sort(orderedPrivateFolders);
+            if (orderedPrivateFolders.isEmpty()) {
+                result.append("\n@private-folders-empty");
+            }
+            for (String folder : orderedPrivateFolders) {
+                result.append("\n@private-folder=").append(folder);
+            }
+        }
+        return result.toString();
     }
 
     private void refreshPhotoFiles(
@@ -2134,15 +2163,24 @@ public final class MainActivity extends Activity
     private void collectPrivateAlbumPhotos(Set<String> discoveredPhotos,
             List<PhotoSource> output, PhotoDiscovery discovery) {
         Cursor cursor = null;
+        Set<String> selectedPrivateFolders = getSelectedPrivateAlbumFolders();
         try {
             cursor = getContentResolver().query(PRIVATE_ALBUM_URI,
-                    new String[] { PRIVATE_ALBUM_CONTENT_URI }, null, null, null);
+                    new String[] { PRIVATE_ALBUM_CONTENT_URI, PRIVATE_ALBUM_SOURCE_FOLDER },
+                    null, null, null);
             if (cursor == null) {
                 return;
             }
             int uriColumn = cursor.getColumnIndex(PRIVATE_ALBUM_CONTENT_URI);
+            int folderColumn = cursor.getColumnIndex(PRIVATE_ALBUM_SOURCE_FOLDER);
             while (uriColumn >= 0 && cursor.moveToNext()
                     && discoveredPhotos.size() < MAX_PHOTO_FILES) {
+                if (selectedPrivateFolders != null) {
+                    String folder = folderColumn >= 0 ? cursor.getString(folderColumn) : null;
+                    if (folder == null || !selectedPrivateFolders.contains(folder)) {
+                        continue;
+                    }
+                }
                 String value = cursor.getString(uriColumn);
                 if (value == null || value.length() == 0 || !discoveredPhotos.add(value)) {
                     continue;

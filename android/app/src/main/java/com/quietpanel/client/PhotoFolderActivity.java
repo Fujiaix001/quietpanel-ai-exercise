@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ClipDrawable;
@@ -36,13 +37,18 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public final class PhotoFolderActivity extends Activity {
     public static final String PREFERENCES = "quietpanel";
     public static final String PHOTO_FOLDERS = "photo_folders";
     public static final String PRIVATE_ALBUM_ENABLED = "private_album_enabled";
+    public static final String PRIVATE_ALBUM_FOLDERS = "private_album_folders";
+    public static final String PRIVATE_ALBUM_FOLDERS_CUSTOMIZED =
+            "private_album_folders_customized";
     public static final String CLOCK_BACKGROUND = "clock_background";
     public static final String CLOCK_FONT_STYLE = "clock_font_style";
     public static final String DATE_FONT_STYLE = "date_font_style";
@@ -65,6 +71,9 @@ public final class PhotoFolderActivity extends Activity {
     public static final String WEATHER_COMPACT_MODE = "weather_compact_mode";
 
     private static final int REQUEST_PICK_PHOTO_TREE = 4101;
+    private static final Uri PRIVATE_ALBUM_URI = Uri.parse(
+            "content://com.quietphoto.privatealbum.photos/photos");
+    private static final String PRIVATE_ALBUM_SOURCE_FOLDER = "source_folder";
 
     private static final int BACKGROUND = Color.rgb(11, 15, 20);
     private static final int PANEL = Color.rgb(24, 31, 40);
@@ -79,6 +88,10 @@ public final class PhotoFolderActivity extends Activity {
     private TextView selectionText;
     private CheckBox currentFolderCheck;
     private CheckBox privateAlbumCheck;
+    private LinearLayout privateAlbumFolderList;
+    private TextView privateAlbumFolderHint;
+    private final Map<String, CheckBox> privateAlbumFolderChecks =
+            new LinkedHashMap<String, CheckBox>();
     private LinearLayout folderList;
     private CheckBox backgroundCheck;
     private CheckBox timeCheck;
@@ -328,15 +341,23 @@ public final class PhotoFolderActivity extends Activity {
         privateAlbumCheck.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                updatePrivateAlbumFolderEnabled();
                 updateSelectionCount();
             }
         });
         root.addView(privateAlbumCheck);
-        TextView privateAlbumHint = text(
+        privateAlbumFolderHint = text(
                 "由手機私有相簿集中管理；加入或刪除照片後會自動重新讀取。",
                 14, SECONDARY);
-        privateAlbumHint.setPadding(dp(10), 0, dp(10), dp(5));
-        root.addView(privateAlbumHint);
+        privateAlbumFolderHint.setPadding(dp(10), 0, dp(10), dp(5));
+        root.addView(privateAlbumFolderHint);
+        root.addView(sectionTitle("私有相簿來源資料夾"));
+        privateAlbumFolderList = new LinearLayout(this);
+        privateAlbumFolderList.setOrientation(LinearLayout.VERTICAL);
+        root.addView(privateAlbumFolderList, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        loadPrivateAlbumFolders();
 
         if (Build.VERSION.SDK_INT >= 21) {
             Button systemFolderPicker = button("從系統選擇照片資料夾／SD 卡", ACCENT);
@@ -573,6 +594,80 @@ public final class PhotoFolderActivity extends Activity {
         return false;
     }
 
+    /** Loads the private album's distinct import folders for the old-device UI. */
+    private void loadPrivateAlbumFolders() {
+        if (privateAlbumFolderList == null) {
+            return;
+        }
+        privateAlbumFolderChecks.clear();
+        privateAlbumFolderList.removeAllViews();
+        SharedPreferences preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+        boolean customized = preferences.getBoolean(PRIVATE_ALBUM_FOLDERS_CUSTOMIZED, false);
+        Set<String> saved = preferences.getStringSet(PRIVATE_ALBUM_FOLDERS, null);
+        Set<String> savedFolders = saved == null
+                ? new HashSet<String>() : new HashSet<String>(saved);
+        Set<String> folders = new LinkedHashSet<String>();
+        Cursor cursor = null;
+        try {
+            cursor = getContentResolver().query(PRIVATE_ALBUM_URI,
+                    new String[] { PRIVATE_ALBUM_SOURCE_FOLDER }, null, null, null);
+            if (cursor != null) {
+                int folderColumn = cursor.getColumnIndex(PRIVATE_ALBUM_SOURCE_FOLDER);
+                while (folderColumn >= 0 && cursor.moveToNext()) {
+                    String folder = cursor.getString(folderColumn);
+                    if (folder != null && folder.length() > 0) {
+                        folders.add(folder);
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // The private album is optional; keep the normal folder picker usable.
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+
+        for (String folder : folders) {
+            CheckBox check = option(privateAlbumFolderLabel(folder),
+                    !customized || savedFolders.contains(folder));
+            check.setTextSize(14);
+            check.setPadding(dp(18), dp(2), dp(10), dp(2));
+            privateAlbumFolderChecks.put(folder, check);
+            privateAlbumFolderList.addView(check, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
+        if (folders.isEmpty()) {
+            privateAlbumFolderHint.setText(
+                    "尚無可選的匯入資料夾；先在「手機私有相簿」匯入照片。"
+                            + "目前會保留全部私有相簿來源設定。");
+        } else {
+            privateAlbumFolderHint.setText(
+                    "勾選要播放的私有相簿資料夾；不勾選則不播放該資料夾。"
+                            + "（單張匯入會列為單張匯入）");
+        }
+        updatePrivateAlbumFolderEnabled();
+        updateSelectionCount();
+    }
+
+    private String privateAlbumFolderLabel(String folder) {
+        if ("（單張匯入）".equals(folder)) {
+            return "單張匯入";
+        }
+        int separator = Math.max(folder.lastIndexOf('/'), folder.lastIndexOf('\\'));
+        String name = separator >= 0 && separator + 1 < folder.length()
+                ? folder.substring(separator + 1) : folder;
+        return name.equals(folder) ? folder : name + "\n" + folder;
+    }
+
+    private void updatePrivateAlbumFolderEnabled() {
+        boolean enabled = privateAlbumCheck == null || privateAlbumCheck.isChecked();
+        for (CheckBox check : privateAlbumFolderChecks.values()) {
+            check.setEnabled(enabled);
+            check.setAlpha(enabled ? 1.0f : 0.45f);
+        }
+    }
+
     private void updateSelectionCount() {
         int systemTrees = 0;
         for (String selected : selectedFolders) {
@@ -580,8 +675,19 @@ public final class PhotoFolderActivity extends Activity {
                 systemTrees++;
             }
         }
-        int totalSources = selectedFolders.size()
-                + (privateAlbumCheck != null && privateAlbumCheck.isChecked() ? 1 : 0);
+        int privateSources = 0;
+        if (privateAlbumCheck != null && privateAlbumCheck.isChecked()) {
+            if (privateAlbumFolderChecks.isEmpty()) {
+                privateSources = 1;
+            } else {
+                for (CheckBox check : privateAlbumFolderChecks.values()) {
+                    if (check.isChecked()) {
+                        privateSources++;
+                    }
+                }
+            }
+        }
+        int totalSources = selectedFolders.size() + privateSources;
         selectionText.setText(systemTrees > 0
                 ? "已選 " + totalSources + " 個來源（SD " + systemTrees + "）"
                 : "已選 " + totalSources + " 個來源");
@@ -593,7 +699,7 @@ public final class PhotoFolderActivity extends Activity {
             Toast.makeText(this, "請至少選擇一個照片來源", Toast.LENGTH_SHORT).show();
             return;
         }
-        getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+        SharedPreferences.Editor editor = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
                 .edit()
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders))
                 .putBoolean(PRIVATE_ALBUM_ENABLED,
@@ -620,8 +726,18 @@ public final class PhotoFolderActivity extends Activity {
                         PhotoFontManager.styleAtOptionIndex(dateFontSpinner.getSelectedItemPosition()))
                 .putInt(WEATHER_FONT_STYLE,
                         PhotoFontManager.styleAtOptionIndex(weatherFontSpinner.getSelectedItemPosition()))
-                .putInt(PHOTO_INTERVAL_SECONDS, 10 + intervalSeek.getProgress() * 5)
-                .apply();
+                .putInt(PHOTO_INTERVAL_SECONDS, 10 + intervalSeek.getProgress() * 5);
+        if (!privateAlbumFolderChecks.isEmpty()) {
+            Set<String> selectedPrivateFolders = new HashSet<String>();
+            for (Map.Entry<String, CheckBox> entry : privateAlbumFolderChecks.entrySet()) {
+                if (entry.getValue().isChecked()) {
+                    selectedPrivateFolders.add(entry.getKey());
+                }
+            }
+            editor.putBoolean(PRIVATE_ALBUM_FOLDERS_CUSTOMIZED, true)
+                    .putStringSet(PRIVATE_ALBUM_FOLDERS, selectedPrivateFolders);
+        }
+        editor.apply();
         AlarmHelper.updateAlarmSchedule(this);
         setResult(RESULT_OK);
         finish();
