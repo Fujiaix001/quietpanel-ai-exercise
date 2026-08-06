@@ -12,8 +12,8 @@ android {
         applicationId = "com.quietpanel.client"
         minSdk = 17
         targetSdk = 36
-        versionCode = 9012
-        versionName = "9.0.12"
+        versionCode = 9013
+        versionName = "9.0.13"
     }
 
     flavorDimensions += "distribution"

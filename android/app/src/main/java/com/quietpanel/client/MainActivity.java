@@ -3,6 +3,7 @@ package com.quietpanel.client;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.database.ContentObserver;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -80,6 +81,9 @@ public final class MainActivity extends Activity
     private static final float MIN_CLOCK_TEXT_SCALE = 0.75f;
     private static final float MAX_CLOCK_TEXT_SCALE = 2.5f;
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
+    private static final Uri PRIVATE_ALBUM_URI = Uri.parse(
+            "content://com.quietphoto.privatealbum.photos/photos");
+    private static final String PRIVATE_ALBUM_CONTENT_URI = "content_uri";
     // Keep the complete selected album.  A slideshow must not silently omit
     // images merely because the folder happens to contain a large collection.
     private static final int MAX_PHOTO_FILES = Integer.MAX_VALUE;
@@ -219,6 +223,8 @@ public final class MainActivity extends Activity
     private int photoIndex;
     private int photoFailures;
     private int photoGeneration;
+    private ContentObserver privateAlbumObserver;
+    private boolean privateAlbumObserverRegistered;
     private boolean photoLoading;
     private boolean photoScanInProgress;
     private boolean photoCatalogLoaded;
@@ -316,6 +322,7 @@ public final class MainActivity extends Activity
         apodServer = new ApodServer(this);
         apodServer.start();
         clockEnvironment = new ClockEnvironmentController(this, clockPanel, this);
+        registerPrivateAlbumObserver();
     }
 
     private void requestModernRuntimePermissions() {
@@ -357,6 +364,7 @@ public final class MainActivity extends Activity
         if (clockEnvironment != null) {
             clockEnvironment.stop();
         }
+        unregisterPrivateAlbumObserver();
         stopPhotoSlideshow();
         super.onPause();
     }
@@ -2010,13 +2018,19 @@ public final class MainActivity extends Activity
                 ? new HashSet<String>() : new HashSet<String>(savedFolders);
     }
 
+    private boolean isPrivateAlbumEnabled() {
+        return getSharedPreferences(PhotoFolderActivity.PREFERENCES, MODE_PRIVATE)
+                .getBoolean(PhotoFolderActivity.PRIVATE_ALBUM_ENABLED, false);
+    }
+
     private String buildPhotoFolderSignature(Set<String> folders) {
         if (folders.isEmpty()) {
-            return "@default";
+            return isPrivateAlbumEnabled() ? "@private-album" : "@default";
         }
         List<String> orderedFolders = new ArrayList<String>(folders);
         Collections.sort(orderedFolders);
-        return TextUtils.join("\n", orderedFolders);
+        String signature = TextUtils.join("\n", orderedFolders);
+        return isPrivateAlbumEnabled() ? signature + "\n@private-album" : signature;
     }
 
     private void refreshPhotoFiles(
@@ -2035,7 +2049,8 @@ public final class MainActivity extends Activity
             public void run() {
                 final List<PhotoSource> scannedPhotos = new ArrayList<PhotoSource>();
                 final boolean[] firstPhotoPublished = new boolean[] { false };
-                final String scanError = collectSelectedPhotoFiles(selectedFolders, scannedPhotos,
+                final String scanError = collectSelectedPhotoFiles(selectedFolders,
+                        isPrivateAlbumEnabled(), scannedPhotos,
                         new PhotoDiscovery() {
                             @Override
                             public void onPhotoDiscovered(final PhotoSource source) {
@@ -2085,8 +2100,9 @@ public final class MainActivity extends Activity
     }
 
     private String collectSelectedPhotoFiles(
-            Set<String> selectedFolders, List<PhotoSource> output, PhotoDiscovery discovery) {
-        if (selectedFolders.isEmpty()) {
+            Set<String> selectedFolders, boolean includePrivateAlbum,
+            List<PhotoSource> output, PhotoDiscovery discovery) {
+        if (selectedFolders.isEmpty() && !includePrivateAlbum) {
             File defaultDirectory = new File(
                     Environment.getExternalStorageDirectory(), PHOTO_DIRECTORY);
             if (!defaultDirectory.exists() && !defaultDirectory.mkdirs()) {
@@ -2097,6 +2113,9 @@ public final class MainActivity extends Activity
 
         Set<String> visitedDirectories = new HashSet<String>();
         Set<String> discoveredPhotos = new LinkedHashSet<String>();
+        if (includePrivateAlbum) {
+            collectPrivateAlbumPhotos(discoveredPhotos, output, discovery);
+        }
         for (String path : selectedFolders) {
             if (path.startsWith("content://") && android.os.Build.VERSION.SDK_INT >= 21) {
                 collectDocumentTreePhotos(Uri.parse(path), visitedDirectories,
@@ -2110,6 +2129,73 @@ public final class MainActivity extends Activity
             }
         }
         return null;
+    }
+
+    private void collectPrivateAlbumPhotos(Set<String> discoveredPhotos,
+            List<PhotoSource> output, PhotoDiscovery discovery) {
+        Cursor cursor = null;
+        try {
+            cursor = getContentResolver().query(PRIVATE_ALBUM_URI,
+                    new String[] { PRIVATE_ALBUM_CONTENT_URI }, null, null, null);
+            if (cursor == null) {
+                return;
+            }
+            int uriColumn = cursor.getColumnIndex(PRIVATE_ALBUM_CONTENT_URI);
+            while (uriColumn >= 0 && cursor.moveToNext()
+                    && discoveredPhotos.size() < MAX_PHOTO_FILES) {
+                String value = cursor.getString(uriColumn);
+                if (value == null || value.length() == 0 || !discoveredPhotos.add(value)) {
+                    continue;
+                }
+                PhotoSource source = PhotoSource.fromUri(Uri.parse(value));
+                output.add(source);
+                discovery.onPhotoDiscovered(source);
+            }
+        } catch (RuntimeException ignored) {
+            // The private album app is optional and may not be installed.
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
+    private void registerPrivateAlbumObserver() {
+        if (privateAlbumObserverRegistered) {
+            return;
+        }
+        privateAlbumObserver = new ContentObserver(photoHandler) {
+            @Override
+            public void onChange(boolean selfChange) {
+                photoGeneration++;
+                photoCatalogLoaded = false;
+                photoScanInProgress = false;
+                photoFolderSignature = "";
+                if (activityResumed && isPrivateAlbumEnabled()
+                        && (currentPage == PHOTO_PAGE || currentPage == WORK_PHOTO_PAGE)) {
+                    startPhotoSlideshow();
+                }
+            }
+        };
+        try {
+            getContentResolver().registerContentObserver(
+                    PRIVATE_ALBUM_URI, true, privateAlbumObserver);
+            privateAlbumObserverRegistered = true;
+        } catch (RuntimeException ignored) {
+            privateAlbumObserver = null;
+        }
+    }
+
+    private void unregisterPrivateAlbumObserver() {
+        if (!privateAlbumObserverRegistered || privateAlbumObserver == null) {
+            return;
+        }
+        try {
+            getContentResolver().unregisterContentObserver(privateAlbumObserver);
+        } catch (RuntimeException ignored) {
+        }
+        privateAlbumObserverRegistered = false;
+        privateAlbumObserver = null;
     }
 
     private void collectPhotoFiles(

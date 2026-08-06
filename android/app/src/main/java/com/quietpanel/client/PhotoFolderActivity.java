@@ -42,6 +42,7 @@ import java.util.Set;
 public final class PhotoFolderActivity extends Activity {
     public static final String PREFERENCES = "quietpanel";
     public static final String PHOTO_FOLDERS = "photo_folders";
+    public static final String PRIVATE_ALBUM_ENABLED = "private_album_enabled";
     public static final String CLOCK_BACKGROUND = "clock_background";
     public static final String CLOCK_FONT_STYLE = "clock_font_style";
     public static final String DATE_FONT_STYLE = "date_font_style";
@@ -77,6 +78,7 @@ public final class PhotoFolderActivity extends Activity {
     private TextView pathText;
     private TextView selectionText;
     private CheckBox currentFolderCheck;
+    private CheckBox privateAlbumCheck;
     private LinearLayout folderList;
     private CheckBox backgroundCheck;
     private CheckBox timeCheck;
@@ -321,6 +323,21 @@ public final class PhotoFolderActivity extends Activity {
         root.addView(dateFontSpinner, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
 
+        privateAlbumCheck = option("使用「手機私有相簿」中的照片",
+                clockPrefs.getBoolean(PRIVATE_ALBUM_ENABLED, false));
+        privateAlbumCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                updateSelectionCount();
+            }
+        });
+        root.addView(privateAlbumCheck);
+        TextView privateAlbumHint = text(
+                "由手機私有相簿集中管理；加入或刪除照片後會自動重新讀取。",
+                14, SECONDARY);
+        privateAlbumHint.setPadding(dp(10), 0, dp(10), dp(5));
+        root.addView(privateAlbumHint);
+
         if (Build.VERSION.SDK_INT >= 21) {
             Button systemFolderPicker = button("從系統選擇照片資料夾／SD 卡", ACCENT);
             systemFolderPicker.setOnClickListener(new View.OnClickListener() {
@@ -563,19 +580,24 @@ public final class PhotoFolderActivity extends Activity {
                 systemTrees++;
             }
         }
+        int totalSources = selectedFolders.size()
+                + (privateAlbumCheck != null && privateAlbumCheck.isChecked() ? 1 : 0);
         selectionText.setText(systemTrees > 0
-                ? "已選 " + selectedFolders.size() + " 個（SD " + systemTrees + "）"
-                : "已選 " + selectedFolders.size() + " 個");
+                ? "已選 " + totalSources + " 個來源（SD " + systemTrees + "）"
+                : "已選 " + totalSources + " 個來源");
     }
 
     private void saveSelection() {
-        if (selectedFolders.isEmpty()) {
-            Toast.makeText(this, "請至少選擇一個資料夾", Toast.LENGTH_SHORT).show();
+        if (selectedFolders.isEmpty()
+                && (privateAlbumCheck == null || !privateAlbumCheck.isChecked())) {
+            Toast.makeText(this, "請至少選擇一個照片來源", Toast.LENGTH_SHORT).show();
             return;
         }
         getSharedPreferences(PREFERENCES, MODE_PRIVATE)
                 .edit()
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders))
+                .putBoolean(PRIVATE_ALBUM_ENABLED,
+                        privateAlbumCheck != null && privateAlbumCheck.isChecked())
                 .putBoolean(CLOCK_BACKGROUND, backgroundCheck.isChecked())
                 .putBoolean(CLOCK_TIME_ENABLED, timeCheck.isChecked())
                 .putBoolean(CLOCK_DATE_ENABLED, dateCheck.isChecked())
