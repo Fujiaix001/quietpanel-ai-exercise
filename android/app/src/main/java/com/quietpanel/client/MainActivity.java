@@ -366,7 +366,7 @@ public final class MainActivity extends Activity
             clockEnvironment.stop();
         }
         unregisterPrivateAlbumObserver();
-        stopPhotoSlideshow();
+        pausePhotoSlideshow();
         super.onPause();
     }
 
@@ -1227,7 +1227,7 @@ public final class MainActivity extends Activity
         }
         if (currentPage == PHOTO_PAGE || currentPage == WORK_PHOTO_PAGE) {
             if (requestedPage != PHOTO_PAGE && requestedPage != WORK_PHOTO_PAGE) {
-                stopPhotoSlideshow();
+                pausePhotoSlideshow();
                 hidePhotoFolderButtonImmediately();
             }
         }
@@ -1735,11 +1735,15 @@ public final class MainActivity extends Activity
             if (photoBitmap == null && !photoFiles.isEmpty()) {
                 loadNextPhoto();
             } else {
+                if (photoBitmap != null) {
+                    photoStatus.setVisibility(View.GONE);
+                    applyPhotoPresentation(photoBitmap);
+                }
                 schedulePhotoTicker();
             }
             return;
         }
-        stopPhotoSlideshow();
+        pausePhotoSlideshow();
         refreshPhotoFiles(selectedFolders, folderSignature);
     }
 
@@ -1757,7 +1761,8 @@ public final class MainActivity extends Activity
         photoHandler.postDelayed(photoTicker, delay);
     }
 
-    private void stopPhotoSlideshow() {
+    /** Stops background work while keeping the current frame ready for instant re-entry. */
+    private void pausePhotoSlideshow() {
         photoHandler.removeCallbacks(photoTicker);
         photoHandler.removeCallbacks(photoPanTicker);
         photoGeneration++;
@@ -1765,18 +1770,25 @@ public final class MainActivity extends Activity
         photoScanInProgress = false;
         if (photoImage != null) {
             photoImage.animate().cancel();
-            photoImage.setImageDrawable(null);
             photoImage.setAlpha(1.0f);
             photoImage.setRotationY(0.0f);
+        }
+        if (pendingPhotoBitmap != null && !pendingPhotoBitmap.isRecycled()) {
+            pendingPhotoBitmap.recycle();
+            pendingPhotoBitmap = null;
+        }
+    }
+
+    /** Releases the retained frame when the activity is actually being destroyed. */
+    private void stopPhotoSlideshow() {
+        pausePhotoSlideshow();
+        if (photoImage != null) {
+            photoImage.setImageDrawable(null);
         }
         releaseSoftBackground();
         if (photoBitmap != null && !photoBitmap.isRecycled()) {
             photoBitmap.recycle();
             photoBitmap = null;
-        }
-        if (pendingPhotoBitmap != null && !pendingPhotoBitmap.isRecycled()) {
-            pendingPhotoBitmap.recycle();
-            pendingPhotoBitmap = null;
         }
     }
 
