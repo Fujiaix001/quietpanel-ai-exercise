@@ -69,6 +69,7 @@ public final class PhotoFolderActivity extends Activity {
     public static final String WEATHER_ENABLED = "weather_enabled";
     public static final String WEATHER_SHOW_LOCATION = "weather_show_location";
     public static final String WEATHER_COMPACT_MODE = "weather_compact_mode";
+    public static final String WEATHER_DAYLIGHT_ENABLED = "weather_daylight_enabled";
 
     private static final int REQUEST_PICK_PHOTO_TREE = 4101;
     private static final Uri PRIVATE_ALBUM_URI = Uri.parse(
@@ -105,6 +106,7 @@ public final class PhotoFolderActivity extends Activity {
     private CheckBox weatherCheck;
     private CheckBox weatherLocationCheck;
     private CheckBox weatherCompactCheck;
+    private CheckBox weatherDaylightCheck;
     private CheckBox alarmCheck;
     private CheckBox alarmRepeatCheck;
     private Button nightStartButton;
@@ -262,6 +264,8 @@ public final class PhotoFolderActivity extends Activity {
                 clockPrefs.getBoolean(WEATHER_SHOW_LOCATION, false));
         weatherCompactCheck = option("精簡排列（無地名時與日期同列）",
                 clockPrefs.getBoolean(WEATHER_COMPACT_MODE, true));
+        weatherDaylightCheck = option("顯示日照進度線（日出／日落）",
+                clockPrefs.getBoolean(WEATHER_DAYLIGHT_ENABLED, true));
         weatherCompactCheck.setEnabled(!weatherLocationCheck.isChecked());
         weatherCompactCheck.setAlpha(weatherLocationCheck.isChecked() ? 0.45f : 1.0f);
         weatherLocationCheck.setOnClickListener(new View.OnClickListener() {
@@ -275,6 +279,7 @@ public final class PhotoFolderActivity extends Activity {
         root.addView(weatherCheck);
         root.addView(weatherLocationCheck);
         root.addView(weatherCompactCheck);
+        root.addView(weatherDaylightCheck);
 
         root.addView(sectionTitle("天氣字型"));
         weatherFontSpinner = createFontSpinner(clockPrefs.getInt(
@@ -739,6 +744,7 @@ public final class PhotoFolderActivity extends Activity {
                 .putBoolean(WEATHER_ENABLED, weatherCheck.isChecked())
                 .putBoolean(WEATHER_SHOW_LOCATION, weatherLocationCheck.isChecked())
                 .putBoolean(WEATHER_COMPACT_MODE, weatherCompactCheck.isChecked())
+                .putBoolean(WEATHER_DAYLIGHT_ENABLED, weatherDaylightCheck.isChecked())
                 .putBoolean(AlarmHelper.PREF_ALARM_ENABLED, alarmCheck.isChecked())
                 .putBoolean(AlarmHelper.PREF_ALARM_REPEAT, alarmRepeatCheck.isChecked())
                 .putInt(AlarmHelper.PREF_ALARM_HOUR, alarmHour)
