@@ -174,8 +174,15 @@ public final class PhotoFolderActivity extends Activity {
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout titleStack = new LinearLayout(this);
+        titleStack.setOrientation(LinearLayout.VERTICAL);
         TextView title = text("相簿設定", 23, PRIMARY);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView version = text("版本 " + BuildConfig.VERSION_NAME, 12, SECONDARY);
+        titleStack.addView(title, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(25)));
+        titleStack.addView(version, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(17)));
         selectionText = text("", 14, ACCENT);
         selectionText.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         Button cancel = button("取消", PANEL);
@@ -192,7 +199,7 @@ public final class PhotoFolderActivity extends Activity {
                 saveSelection();
             }
         });
-        titleRow.addView(title, new LinearLayout.LayoutParams(0, dp(42), 2));
+        titleRow.addView(titleStack, new LinearLayout.LayoutParams(0, dp(42), 2));
         titleRow.addView(selectionText, new LinearLayout.LayoutParams(0, dp(42), 1));
         titleRow.addView(cancel, new LinearLayout.LayoutParams(dp(100), dp(38)));
         LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(dp(100), dp(38));
