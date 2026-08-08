@@ -158,6 +158,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     CMVideoFormatDescriptionRef _formatDescription;
     CFTimeInterval _lastKeyframeRequest;
     BOOL _displayActive;
+    BOOL _decoderResetPending;
 }
 
 - (instancetype)initWithDisplayLayer:(AVSampleBufferDisplayLayer *)displayLayer
@@ -208,19 +209,21 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 }
 
 - (void)setDisplayActive:(BOOL)active {
-    dispatch_async(_queue, ^{
-        if (self->_displayActive == active) return;
-        self->_displayActive = active;
-        [self resetDecoder];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            self->_cursorView.hidden = YES;
-        });
-        if (self->_clientFD >= 0) {
-            [self sendJSON:@{ @"type": @"visible", @"v": @(active) }
-                    socket:self->_clientFD];
-            if (active) [self requestKeyframe];
-        }
+    int socketFD;
+    @synchronized (self) {
+        if (_displayActive == active) return;
+        _displayActive = active;
+        _decoderResetPending = YES;
+        socketFD = _clientFD;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self->_cursorView.hidden = YES;
     });
+    if (socketFD >= 0) {
+        [self sendJSON:@{ @"type": @"visible", @"v": @(active) }
+                socket:socketFD];
+        if (active) [self requestKeyframe];
+    }
 }
 
 - (void)runServer {
@@ -255,18 +258,26 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
             if (errno == EINTR) continue;
             break;
         }
-        _clientFD = socketFD;
+        @synchronized (self) {
+            _clientFD = socketFD;
+        }
         setsockopt(socketFD, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
         [self resetDecoder];
         [self setStatus:@"已連接 Mac" connected:YES];
         if ([self sendHello:socketFD]) {
-            [self sendJSON:@{ @"type": @"visible", @"v": @(_displayActive) }
+            BOOL displayActive;
+            @synchronized (self) {
+                displayActive = _displayActive;
+            }
+            [self sendJSON:@{ @"type": @"visible", @"v": @(displayActive) }
                     socket:socketFD];
-            if (_displayActive) [self requestKeyframe];
+            if (displayActive) [self requestKeyframe];
             [self receiveFrames:socketFD];
         }
+        @synchronized (self) {
+            if (_clientFD == socketFD) _clientFD = -1;
+        }
         close(socketFD);
-        _clientFD = -1;
         [self setStatus:@"連線中斷，等待重新連接" connected:NO];
     }
 }
@@ -295,9 +306,14 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
 - (void)requestKeyframe {
     CFTimeInterval now = CACurrentMediaTime();
-    if (_clientFD < 0 || (_lastKeyframeRequest > 0 && now - _lastKeyframeRequest < 1.0)) return;
-    _lastKeyframeRequest = now;
-    [self sendJSON:@{@"type": @"kf"} socket:_clientFD];
+    int socketFD;
+    @synchronized (self) {
+        socketFD = _clientFD;
+        if (socketFD < 0 ||
+            (_lastKeyframeRequest > 0 && now - _lastKeyframeRequest < 1.0)) return;
+        _lastKeyframeRequest = now;
+    }
+    [self sendJSON:@{@"type": @"kf"} socket:socketFD];
 }
 
 - (BOOL)sendHello:(int)socketFD {
@@ -327,11 +343,20 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 }
 
 - (void)handlePayload:(NSData *)payload socket:(int)socketFD {
+    BOOL displayActive;
+    BOOL resetDecoder;
+    @synchronized (self) {
+        displayActive = _displayActive;
+        resetDecoder = _decoderResetPending;
+        _decoderResetPending = NO;
+    }
+    if (resetDecoder) [self resetDecoder];
+
     const uint8_t *bytes = payload.bytes;
     if (payload.length > 0 && bytes[0] == '{' &&
         !LegacyPayloadContainsVideo(bytes, payload.length)) {
         [self handleControl:payload socket:socketFD];
-    } else if (LegacyShouldDecodeVideo(_displayActive, bytes, payload.length)) {
+    } else if (LegacyShouldDecodeVideo(displayActive, bytes, payload.length)) {
         [self handleAnnexB:payload];
     }
 }
@@ -355,7 +380,10 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         BOOL visible = [[message objectForKey:@"v"] boolValue];
         CGFloat x = [[message objectForKey:@"x"] doubleValue];
         CGFloat y = [[message objectForKey:@"y"] doubleValue];
-        BOOL displayActive = _displayActive;
+        BOOL displayActive;
+        @synchronized (self) {
+            displayActive = _displayActive;
+        }
         dispatch_async(dispatch_get_main_queue(), ^{
             self->_cursorView.hidden = !visible || !displayActive;
             if (visible && displayActive) {
@@ -607,7 +635,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [_dashboardView addSubview:title];
 
     UILabel *version = [[UILabel alloc] initWithFrame:CGRectMake(32, 58, 420, 26)];
-    version.text = @"Mac 系統監控 + 延伸螢幕 · 0.1.0";
+    version.text = @"Mac 系統監控 + 延伸螢幕 · 0.1.1";
     version.textColor = [UIColor colorWithWhite:0.55 alpha:1.0];
     version.font = [UIFont systemFontOfSize:13.0];
     [_dashboardView addSubview:version];

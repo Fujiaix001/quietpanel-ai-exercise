@@ -1,4 +1,4 @@
-# QuietPanel iOS preview 0.1.0
+# QuietPanel iOS preview 0.1.1
 
 This is a standalone armv7/iOS 9 integration build. It uses its own package,
 bundle, executable, preferences and TCP port, so the verified LegacyPad Display
@@ -26,5 +26,5 @@ Build with the verified iPhoneOS 9.3 SDK and Theos toolchain:
 THEOS=/absolute/path/to/theos make clean package FINALPACKAGE=1
 ```
 
-Version 0.1.0 is the first standalone preview. LegacyPad Display remains an
-independent app and rollback baseline.
+Version 0.1.1 fixes page visibility updates while the receiver is connected.
+LegacyPad Display remains an independent app and rollback baseline.

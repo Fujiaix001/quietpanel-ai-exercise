@@ -20,3 +20,17 @@ if grep -q 'tw.codex.legacypaddisplay' "$repo_dir/control" "$repo_dir/Resources/
   exit 1
 fi
 echo 'standalone identity: ok'
+
+page_transition=$(awk '
+  $0 == "- (void)setDisplayActive:(BOOL)active {" { capture = 1 }
+  capture { print }
+  capture && /^}$/ { exit }
+' "$repo_dir/main.m")
+case "$page_transition" in
+  *'dispatch_async(_queue'*)
+    echo 'page transition must not wait behind the blocking receive loop' >&2
+    exit 1
+    ;;
+esac
+printf '%s\n' "$page_transition" | grep -q '@synchronized (self)'
+echo 'page transition queue: ok'
