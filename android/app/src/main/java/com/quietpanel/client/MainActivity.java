@@ -168,6 +168,9 @@ public final class MainActivity extends Activity
     private WeatherIconView weatherIcon;
     private TextView weatherTemperature;
     private TextView weatherLocation;
+    private LinearLayout daylightPanel;
+    private DaylightProgressView daylightProgressView;
+    private TextView daylightLabel;
     private LinearLayout alarmRow;
     private AlarmIconView alarmIcon;
     private TextView alarmTimeText;
@@ -192,6 +195,8 @@ public final class MainActivity extends Activity
             new SimpleDateFormat("M月d日 EEEE", Locale.TAIWAN);
     private final SimpleDateFormat photoDateEnglishFormat =
             new SimpleDateFormat("EEE, MMM d", Locale.US);
+    private final SimpleDateFormat weatherSunTimeFormat =
+            new SimpleDateFormat("HH:mm", Locale.TAIWAN);
     private final Date photoClockDate = new Date();
     private float clockDownX;
     private float clockDownY;
@@ -779,6 +784,21 @@ public final class MainActivity extends Activity
         clockPanel.addView(weatherRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        daylightPanel = new LinearLayout(this);
+        daylightPanel.setOrientation(LinearLayout.VERTICAL);
+        daylightPanel.setGravity(Gravity.RIGHT);
+        daylightProgressView = new DaylightProgressView(this);
+        daylightLabel = makeText("", 12, Color.WHITE, Gravity.RIGHT);
+        daylightLabel.setIncludeFontPadding(false);
+        daylightLabel.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+        daylightPanel.addView(daylightProgressView, new LinearLayout.LayoutParams(
+                dp(220), dp(14)));
+        daylightPanel.addView(daylightLabel, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(18)));
+        daylightPanel.setVisibility(View.GONE);
+        clockPanel.addView(daylightPanel, new LinearLayout.LayoutParams(
+                dp(220), LinearLayout.LayoutParams.WRAP_CONTENT));
 
         alarmRow = new LinearLayout(this);
         alarmRow.setGravity(Gravity.RIGHT | Gravity.BOTTOM);
@@ -1461,6 +1481,9 @@ public final class MainActivity extends Activity
         if (weatherLocation != null) {
             weatherLocation.setTypeface(weatherTypeface);
         }
+        if (daylightLabel != null) {
+            daylightLabel.setTypeface(weatherTypeface);
+        }
         if (alarmTimeText != null) {
             alarmTimeText.setTypeface(timeTypeface);
         }
@@ -1564,6 +1587,9 @@ public final class MainActivity extends Activity
         if (weatherLocation != null) {
             weatherLocation.setTextSize(14.0f * displayScale);
         }
+        if (daylightLabel != null) {
+            daylightLabel.setTextSize(12.0f * displayScale);
+        }
         if (alarmTimeText != null) {
             alarmTimeText.setTextSize(16.0f * displayScale);
         }
@@ -1578,6 +1604,10 @@ public final class MainActivity extends Activity
         resizeView(weatherIcon, weatherSize, weatherSize);
         resizeView(weatherTemperature, ViewGroup.LayoutParams.WRAP_CONTENT, weatherSize);
         resizeView(weatherLocation, ViewGroup.LayoutParams.WRAP_CONTENT, weatherSize);
+        int daylightWidth = dp(Math.max(1, Math.round(220.0f * displayScale)));
+        resizeView(daylightPanel, daylightWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+        resizeView(daylightProgressView, daylightWidth,
+                dp(Math.max(1, Math.round(14.0f * displayScale))));
         if (weatherLocation != null && weatherLocation.getLayoutParams() instanceof LinearLayout.LayoutParams) {
             ((LinearLayout.LayoutParams) weatherLocation.getLayoutParams()).leftMargin =
                     dp(Math.max(1, Math.round(8.0f * displayScale)));
@@ -1909,6 +1939,9 @@ public final class MainActivity extends Activity
                     ? photoDateEnglishFormat : photoDateChineseFormat;
             photoDate.setText(format.format(photoClockDate));
         }
+        if (daylightProgressView != null && daylightProgressView.getVisibility() == View.VISIBLE) {
+            daylightProgressView.setNow(photoClockDate.getTime());
+        }
     }
 
     private void applyWeather(JSONObject weather) {
@@ -1945,6 +1978,7 @@ public final class MainActivity extends Activity
                 PhotoFolderActivity.WEATHER_COMPACT_MODE, true) && !showLocation;
         applyWeatherLayout(compact);
         weatherRow.setVisibility(View.VISIBLE);
+        applyDaylight(weather);
     }
 
     private void applyWeatherLayout(boolean compact) {
@@ -1976,6 +2010,32 @@ public final class MainActivity extends Activity
         if (weatherRow != null) {
             weatherRow.setVisibility(View.GONE);
         }
+        if (daylightPanel != null) {
+            daylightPanel.setVisibility(View.GONE);
+        }
+    }
+
+    private void applyDaylight(JSONObject weather) {
+        if (daylightPanel == null || daylightProgressView == null || daylightLabel == null) {
+            return;
+        }
+        android.content.SharedPreferences preferences = getSharedPreferences(
+                PhotoFolderActivity.PREFERENCES, MODE_PRIVATE);
+        if (!preferences.getBoolean(PhotoFolderActivity.WEATHER_DAYLIGHT_ENABLED, true)) {
+            daylightPanel.setVisibility(View.GONE);
+            return;
+        }
+        long sunriseAtMs = weather.optLong("sunrise_at_ms", -1L);
+        long sunsetAtMs = weather.optLong("sunset_at_ms", -1L);
+        if (sunriseAtMs <= 0L || sunsetAtMs <= sunriseAtMs) {
+            daylightPanel.setVisibility(View.GONE);
+            return;
+        }
+        daylightProgressView.setTimes(sunriseAtMs, sunsetAtMs);
+        daylightProgressView.setNow(System.currentTimeMillis());
+        daylightLabel.setText("日出 " + weatherSunTimeFormat.format(new Date(sunriseAtMs))
+                + "　日落 " + weatherSunTimeFormat.format(new Date(sunsetAtMs)));
+        daylightPanel.setVisibility(View.VISIBLE);
     }
 
     private void updateAlarmIndicator() {

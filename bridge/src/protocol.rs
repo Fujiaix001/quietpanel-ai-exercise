@@ -88,6 +88,10 @@ pub struct WeatherSnapshot {
     pub updated_at: u64,
     #[serde(default)]
     pub stale: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sunrise_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sunset_at_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -338,6 +342,8 @@ mod tests {
             location: "Taipei".to_string(),
             updated_at: 123,
             stale: false,
+            sunrise_at_ms: None,
+            sunset_at_ms: None,
         });
         assert_eq!(
             serde_json::to_value(weather).unwrap(),

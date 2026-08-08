@@ -86,7 +86,7 @@ fn download(config: &WeatherConfig) -> Result<WeatherSnapshot, String> {
         return Err("invalid latitude or longitude".to_string());
     }
     let url = format!(
-        "https://api.open-meteo.com/v1/forecast?latitude={:.6}&longitude={:.6}&current=temperature_2m,weather_code,is_day&temperature_unit=celsius&timezone=auto",
+        "https://api.open-meteo.com/v1/forecast?latitude={:.6}&longitude={:.6}&current=temperature_2m,weather_code,is_day&daily=sunrise,sunset&forecast_days=1&timeformat=unixtime&temperature_unit=celsius&timezone=auto",
         config.latitude, config.longitude
     );
     let response = ureq::AgentBuilder::new()
@@ -129,6 +129,8 @@ fn parse_response(bytes: &[u8], location: &str) -> Result<WeatherSnapshot, Strin
         .ok_or_else(|| "missing weather code".to_string())?;
     let is_day = current.get("is_day").and_then(Value::as_i64).unwrap_or(1) != 0;
     let code = i32::try_from(code).map_err(|_| "weather code is out of range".to_string())?;
+    let sunrise_at_ms = parse_daily_time(&root, "sunrise");
+    let sunset_at_ms = parse_daily_time(&root, "sunset");
     Ok(WeatherSnapshot {
         temperature_c: temperature,
         code,
@@ -136,7 +138,31 @@ fn parse_response(bytes: &[u8], location: &str) -> Result<WeatherSnapshot, Strin
         location: location.to_string(),
         updated_at: unix_now(),
         stale: false,
+        sunrise_at_ms,
+        sunset_at_ms,
     })
+}
+
+fn parse_daily_time(root: &Value, key: &str) -> Option<u64> {
+    root.get("daily")
+        .and_then(Value::as_object)
+        .and_then(|daily| daily.get(key))
+        .and_then(Value::as_array)
+        .and_then(|values| values.first())
+        .and_then(parse_unix_ms)
+}
+
+fn parse_unix_ms(value: &Value) -> Option<u64> {
+    let seconds = value
+        .as_u64()
+        .map(|value| value as f64)
+        .or_else(|| value.as_i64().map(|value| value as f64))
+        .or_else(|| value.as_f64())
+        .or_else(|| value.as_str().and_then(|value| value.parse::<f64>().ok()))?;
+    if !seconds.is_finite() || seconds <= 0.0 || seconds > (u64::MAX as f64 / 1000.0) {
+        return None;
+    }
+    Some((seconds * 1000.0).round() as u64)
 }
 
 fn unix_now() -> u64 {
@@ -171,7 +197,7 @@ mod tests {
     #[test]
     fn parses_open_meteo_current_weather() {
         let value = parse_response(
-            br#"{"current":{"temperature_2m":29.4,"weather_code":2,"is_day":1}}"#,
+            br#"{"current":{"temperature_2m":29.4,"weather_code":2,"is_day":1},"daily":{"sunrise":[1786137879],"sunset":[1786185275]}}"#,
             "Taipei",
         )
         .unwrap();
@@ -179,5 +205,7 @@ mod tests {
         assert_eq!(value.code, 2);
         assert_eq!(value.location, "Taipei");
         assert!(value.is_day);
+        assert_eq!(value.sunrise_at_ms, Some(1786137879000));
+        assert_eq!(value.sunset_at_ms, Some(1786185275000));
     }
 }
