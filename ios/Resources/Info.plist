@@ -5,13 +5,13 @@
 	<key>CFBundleDisplayName</key>
 	<string>QuietPanel</string>
 	<key>CFBundleExecutable</key>
-	<string>LegacyPadDisplay</string>
+	<string>QuietPanel</string>
 	<key>CFBundleIdentifier</key>
-	<string>tw.codex.legacypaddisplay</string>
+	<string>tw.codex.quietpanel</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>LegacyPadDisplay</string>
+	<string>QuietPanel</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleIconFiles</key>
@@ -48,9 +48,9 @@
 		</dict>
 	</dict>
 	<key>CFBundleShortVersionString</key>
-	<string>0.3.0</string>
+	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
-	<string>4</string>
+	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>MinimumOSVersion</key>

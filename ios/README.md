@@ -1,8 +1,12 @@
-# QuietPanel iOS preview 0.3.0
+# QuietPanel iOS preview 0.1.0
 
-This is the first armv7/iOS 9 integration build. It upgrades the verified
-LegacyPad Display receiver without changing its package or bundle identifier,
-so OpenDisplay keeps the same install identity and display arrangement.
+This is a standalone armv7/iOS 9 integration build. It uses its own package,
+bundle, executable, preferences and TCP port, so the verified LegacyPad Display
+app remains installed and unchanged.
+
+- Cydia package and bundle: `tw.codex.quietpanel`
+- App and executable: `QuietPanel`
+- Receiver port: `9001` (`LegacyPad Display` continues to use `9000`)
 
 - Page 1 is a live Mac dashboard: CPU, memory, network throughput, system-disk
   usage, clock and connection status.
@@ -22,5 +26,5 @@ Build with the verified iPhoneOS 9.3 SDK and Theos toolchain:
 THEOS=/absolute/path/to/theos make clean package FINALPACKAGE=1
 ```
 
-Version 0.3.0 is a preview. The existing 0.2.1 and 0.2.2 packages remain the
-rollback baseline.
+Version 0.1.0 is the first standalone preview. LegacyPad Display remains an
+independent app and rollback baseline.

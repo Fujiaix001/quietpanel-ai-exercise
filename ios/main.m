@@ -86,7 +86,7 @@ int main(void) {
 #import <sys/socket.h>
 #import <unistd.h>
 
-static const uint16_t kLegacyPort = 9000;
+static const uint16_t kLegacyPort = 9001;
 static const uint32_t kMaximumPayload = 16 * 1024 * 1024;
 
 static BOOL LegacyReadFully(int socketFD, void *buffer, size_t length) {
@@ -177,7 +177,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         _scale = scale;
         _metricsHandler = [metricsHandler copy];
         _statusHandler = [statusHandler copy];
-        _queue = dispatch_queue_create("tw.codex.legacypad.receiver", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("tw.codex.quietpanel.receiver", DISPATCH_QUEUE_SERIAL);
         _serverFD = -1;
         _clientFD = -1;
         _displayActive = NO;
@@ -273,10 +273,10 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
 - (NSString *)installID {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSString *installID = [defaults stringForKey:@"LegacyPadDisplay.installID"];
+    NSString *installID = [defaults stringForKey:@"QuietPanel.installID"];
     if (!installID) {
         installID = [[NSUUID UUID] UUIDString];
-        [defaults setObject:installID forKey:@"LegacyPadDisplay.installID"];
+        [defaults setObject:installID forKey:@"QuietPanel.installID"];
         [defaults synchronize];
     }
     return installID;
@@ -607,7 +607,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [_dashboardView addSubview:title];
 
     UILabel *version = [[UILabel alloc] initWithFrame:CGRectMake(32, 58, 420, 26)];
-    version.text = @"Mac 系統監控 + 延伸螢幕 · 0.3.0";
+    version.text = @"Mac 系統監控 + 延伸螢幕 · 0.1.0";
     version.textColor = [UIColor colorWithWhite:0.55 alpha:1.0];
     version.font = [UIFont systemFontOfSize:13.0];
     [_dashboardView addSubview:version];
