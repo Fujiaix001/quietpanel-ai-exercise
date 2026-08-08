@@ -1,0 +1,9 @@
+Package: tw.codex.legacypaddisplay
+Name: QuietPanel Preview
+Version: 0.3.0
+Architecture: iphoneos-arm
+Description: QuietPanel page preview with an OpenDisplay-compatible receiver for iOS 9.
+Maintainer: Codex
+Author: Codex
+Section: Utilities
+Depends: firmware (>= 9.0)

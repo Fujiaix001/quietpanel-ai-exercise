@@ -9,6 +9,10 @@ QuietPanel 把 Android 手機變成 Windows 系統監控、快捷控制與相片
 
 支援 Android 4.2（API 17）至目前的 Android；主要實機為 Xiaomi 2013023／Android 4.2.2。
 
+## iPad mini 1／macOS 預覽版
+
+`ios/` 新增 armv7／iOS 9.3.5 預覽版：第一頁顯示 Mac 的 CPU、記憶體、網路與系統磁碟，第二頁整合 OpenDisplay 延伸螢幕，左右滑動切換。兩頁共用 USB 連線；完整建置與相容性說明見 [ios/README.md](ios/README.md)。Mac 發送端位於配套的 OpenDisplay 來源分支。
+
 ## 連線模式
 
 同一個 Android APK 可接受四種模式，點標題列的模式按鈕切換：
