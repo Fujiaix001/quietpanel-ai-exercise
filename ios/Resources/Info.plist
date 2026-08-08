@@ -48,13 +48,15 @@
 		</dict>
 	</dict>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.1</string>
+	<string>0.3.0</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>4</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>MinimumOSVersion</key>
 	<string>9.0</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>QuietPanel 使用本機相片顯示相簿時鐘；照片不會上傳到 Mac 或網路。</string>
 	<key>UIDeviceFamily</key>
 	<array>
 		<integer>2</integer>
@@ -69,6 +71,22 @@
 	<true/>
 	<key>UIRequiresFullScreen</key>
 	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fonts/font_digital.ttf</string>
+		<string>Fonts/font_sans.ttf</string>
+		<string>Fonts/font_serif.ttf</string>
+		<string>Fonts/font_rounded.ttf</string>
+		<string>Fonts/font_kai.ttf</string>
+		<string>Fonts/font_heavy.ttf</string>
+		<string>Fonts/font_orbitron.ttf</string>
+		<string>Fonts/font_audiowide.ttf</string>
+		<string>Fonts/font_oxanium.ttf</string>
+		<string>Fonts/font_sairastencil.ttf</string>
+		<string>Fonts/font_zendots.ttf</string>
+		<string>Fonts/font_huninn.ttf</string>
+		<string>Fonts/font_iansui.ttf</string>
+	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationLandscapeLeft</string>

@@ -7,7 +7,7 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = QuietPanel
 QuietPanel_FILES = main.m
-QuietPanel_FRAMEWORKS = UIKit AVFoundation CoreMedia QuartzCore
+QuietPanel_FRAMEWORKS = UIKit AVFoundation CoreMedia Photos QuartzCore
 QuietPanel_CFLAGS = -fobjc-arc -Wall -Wextra -Wno-error=deprecated-module-dot-map
 
 include $(THEOS_MAKE_PATH)/application.mk
