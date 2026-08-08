@@ -73,6 +73,8 @@ public final class PhotoFolderActivity extends Activity {
     private static final int REQUEST_PICK_PHOTO_TREE = 4101;
     private static final Uri PRIVATE_ALBUM_URI = Uri.parse(
             "content://com.quietphoto.privatealbum.photos/photos");
+    private static final Uri PRIVATE_ALBUM_FOLDERS_URI = Uri.parse(
+            "content://com.quietphoto.privatealbum.photos/folders");
     private static final String PRIVATE_ALBUM_SOURCE_FOLDER = "source_folder";
 
     private static final int BACKGROUND = Color.rgb(11, 15, 20);
@@ -616,8 +618,7 @@ public final class PhotoFolderActivity extends Activity {
         Set<String> folders = new LinkedHashSet<String>();
         Cursor cursor = null;
         try {
-            cursor = getContentResolver().query(PRIVATE_ALBUM_URI,
-                    new String[] { PRIVATE_ALBUM_SOURCE_FOLDER }, null, null, null);
+            cursor = queryPrivateAlbumFolders();
             if (cursor != null) {
                 int folderColumn = cursor.getColumnIndex(PRIVATE_ALBUM_SOURCE_FOLDER);
                 while (folderColumn >= 0 && cursor.moveToNext()) {
@@ -655,6 +656,21 @@ public final class PhotoFolderActivity extends Activity {
         }
         updatePrivateAlbumFolderEnabled();
         updateSelectionCount();
+    }
+
+    /** Uses the lightweight folder index, with compatibility for the old provider. */
+    private Cursor queryPrivateAlbumFolders() {
+        try {
+            Cursor cursor = getContentResolver().query(PRIVATE_ALBUM_FOLDERS_URI,
+                    new String[] { PRIVATE_ALBUM_SOURCE_FOLDER }, null, null, null);
+            if (cursor != null) {
+                return cursor;
+            }
+        } catch (RuntimeException ignored) {
+            // Older private-album builds only expose /photos.
+        }
+        return getContentResolver().query(PRIVATE_ALBUM_URI,
+                new String[] { PRIVATE_ALBUM_SOURCE_FOLDER }, null, null, null);
     }
 
     private String privateAlbumFolderLabel(String folder) {

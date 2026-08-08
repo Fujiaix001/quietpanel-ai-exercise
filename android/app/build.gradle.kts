@@ -12,8 +12,8 @@ android {
         applicationId = "com.quietpanel.client"
         minSdk = 17
         targetSdk = 36
-        versionCode = 420002
-        versionName = "42.0.2-redmi42"
+        versionCode = 420003
+        versionName = "42.0.3-redmi42"
     }
 
     flavorDimensions += "distribution"
