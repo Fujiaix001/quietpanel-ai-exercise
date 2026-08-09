@@ -55,6 +55,14 @@ static double QuietRenderingScale(double screenScale, double viewScale) {
     return screenScale * viewScale;
 }
 
+static double QuietScaledPixelValue(double value, double viewScale,
+                                    double screenScale) {
+    if (!isfinite(value) || value <= 0) return 0;
+    if (!isfinite(viewScale) || viewScale <= 0) viewScale = 1.0;
+    if (!isfinite(screenScale) || screenScale <= 0) screenScale = 1.0;
+    return round(value * viewScale * screenScale) / screenScale;
+}
+
 static size_t QuietAlbumImportBatchCount(size_t remaining) {
     return remaining < 10 ? remaining : 10;
 }
@@ -188,6 +196,10 @@ int main(void) {
     assert(fabs(QuietRenderingScale(1.0, 1.4) - 1.4) < 0.0001);
     assert(QuietRenderingScale(2.0, 0.75) == 2.0);
     assert(QuietRenderingScale(NAN, NAN) == 1.0);
+    assert(QuietScaledPixelValue(22.0, 1.3676, 1.0) == 30.0);
+    assert(QuietScaledPixelValue(16.0, 1.3676, 1.0) == 22.0);
+    assert(QuietScaledPixelValue(16.0, 1.0, 2.0) == 16.0);
+    assert(QuietScaledPixelValue(0.0, 1.0, 1.0) == 0.0);
     assert(QuietAlbumImportBatchCount(0) == 0);
     assert(QuietAlbumImportBatchCount(7) == 7);
     assert(QuietAlbumImportBatchCount(780) == 10);
@@ -252,6 +264,21 @@ static void QuietApplyContentsScale(UIView *view, CGFloat contentsScale) {
     for (UIView *subview in view.subviews) {
         QuietApplyContentsScale(subview, contentsScale);
     }
+}
+
+static void QuietSetDirectTextFrame(UILabel *label, CGRect frame,
+                                    CGFloat viewScale) {
+    if (!isfinite(viewScale) || viewScale <= 0) viewScale = 1.0;
+    CGFloat screenScale = MAX(1.0, [UIScreen mainScreen].scale);
+    CGFloat width = (CGFloat)QuietScaledPixelValue(
+        CGRectGetWidth(frame), viewScale, screenScale);
+    CGFloat height = (CGFloat)QuietScaledPixelValue(
+        CGRectGetHeight(frame), viewScale, screenScale);
+    label.transform = CGAffineTransformIdentity;
+    label.bounds = CGRectMake(0, 0, width, height);
+    label.center = CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame));
+    label.transform = CGAffineTransformMakeScale(
+        1.0 / viewScale, 1.0 / viewScale);
 }
 
 static NSArray *QuietFontNames(void) {
@@ -2250,26 +2277,31 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
 - (void)layoutPhotoClockContent {
     if (!_photoClockPanel) return;
-    _photoDaylightLabel.frame = CGRectMake(193, 181, 209, 22);
+    CGFloat textScale = _photoClockScale > 0 ? _photoClockScale : 1.0;
+    QuietSetDirectTextFrame(_photoDaylightLabel,
+        CGRectMake(193, 181, 209, 22), textScale);
     _photoDaylightProgress.frame = CGRectMake(193, 211, 209, 3);
-    _photoTimeLabel.frame = CGRectMake(18, 0, 384, 96);
-    _photoDateLabel.frame = CGRectMake(18, 92, 384, 38);
+    QuietSetDirectTextFrame(_photoTimeLabel,
+        CGRectMake(18, 0, 384, 96), textScale);
+    QuietSetDirectTextFrame(_photoDateLabel,
+        CGRectMake(18, 92, 384, 38), textScale);
     _photoWeatherRow.frame = CGRectMake(18, 132, 384, 46);
     _photoWeatherLocationLabel.textAlignment = NSTextAlignmentLeft;
     _photoWeatherLocationLabel.numberOfLines = 1;
 
     CGSize temperatureSize = [_photoWeatherTemperatureLabel
-        sizeThatFits:CGSizeMake(116, 44)];
+        sizeThatFits:CGSizeMake(116 * textScale, 44 * textScale)];
     CGFloat iconWidth = 44.0;
     CGFloat temperatureWidth = MIN(116.0,
-        MAX(72.0, ceil(temperatureSize.width) + 4.0));
+        MAX(72.0, ceil(temperatureSize.width / textScale) + 4.0));
     CGFloat locationWidth = 0.0;
     BOOL showLocation = !_photoWeatherLocationLabel.hidden &&
         _photoWeatherLocationLabel.text.length > 0;
     if (showLocation) {
         CGSize locationSize = [_photoWeatherLocationLabel
-            sizeThatFits:CGSizeMake(220.0, 34.0)];
-        locationWidth = MIN(220.0, MAX(24.0, ceil(locationSize.width) + 2.0));
+            sizeThatFits:CGSizeMake(220.0 * textScale, 34.0 * textScale)];
+        locationWidth = MIN(220.0,
+            MAX(24.0, ceil(locationSize.width / textScale) + 2.0));
         locationWidth = MIN(locationWidth,
             MAX(0.0, 384.0 - iconWidth - temperatureWidth - 18.0));
     }
@@ -2278,11 +2310,11 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     CGFloat iconX = MAX(0.0, 384.0 - contentWidth);
     CGFloat temperatureX = iconX + iconWidth + 8.0;
     _photoWeatherIconView.frame = CGRectMake(iconX, 0, iconWidth, 44);
-    _photoWeatherTemperatureLabel.frame = CGRectMake(
-        temperatureX, 0, temperatureWidth, 44);
-    _photoWeatherLocationLabel.frame = CGRectMake(
-        temperatureX + temperatureWidth + 10.0, 10.0,
-        locationWidth, 34.0);
+    QuietSetDirectTextFrame(_photoWeatherTemperatureLabel,
+        CGRectMake(temperatureX, 0, temperatureWidth, 44), textScale);
+    QuietSetDirectTextFrame(_photoWeatherLocationLabel,
+        CGRectMake(temperatureX + temperatureWidth + 10.0, 10.0,
+                   locationWidth, 34.0), textScale);
 }
 
 - (void)applyPhotoClockScale:(CGFloat)requestedScale {
@@ -2296,9 +2328,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 }
 
 - (void)refreshPhotoClockRenderingScale {
-    CGFloat contentsScale = (CGFloat)QuietRenderingScale(
-        [UIScreen mainScreen].scale, _photoClockScale);
-    QuietApplyContentsScale(_photoClockPanel, contentsScale);
+    [self applyPhotoFontSettings];
 }
 
 - (CGRect)photoClockCenterRangeAllowingOverflow:(BOOL)allowOverflow {
@@ -2751,16 +2781,27 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     NSInteger timeIndex = QuietNormalizedFontIndex([defaults integerForKey:kQuietTimeFontKey]);
     NSInteger dateIndex = QuietNormalizedFontIndex([defaults integerForKey:kQuietDateFontKey]);
     NSInteger weatherIndex = QuietNormalizedFontIndex([defaults integerForKey:kQuietWeatherFontKey]);
-    _photoTimeLabel.font = QuietFontAtIndex(timeIndex, 78.0,
-        [UIFont systemFontOfSize:78.0 weight:UIFontWeightThin]);
-    _photoDateLabel.font = QuietFontAtIndex(dateIndex, 22.0,
-        [UIFont systemFontOfSize:22.0]);
-    _photoWeatherTemperatureLabel.font = QuietFontAtIndex(weatherIndex, 28.0,
-        [UIFont systemFontOfSize:28.0 weight:UIFontWeightLight]);
-    _photoWeatherLocationLabel.font = QuietFontAtIndex(weatherIndex, 16.0,
-        [UIFont systemFontOfSize:16.0]);
-    _photoDaylightLabel.font = QuietFontAtIndex(weatherIndex, 12.0,
-        [UIFont systemFontOfSize:12.0]);
+    CGFloat textScale = _photoClockScale > 0 ? _photoClockScale : 1.0;
+    CGFloat screenScale = MAX(1.0, [UIScreen mainScreen].scale);
+    CGFloat timeSize = (CGFloat)QuietScaledPixelValue(78.0, textScale, screenScale);
+    CGFloat dateSize = (CGFloat)QuietScaledPixelValue(22.0, textScale, screenScale);
+    CGFloat temperatureSize = (CGFloat)QuietScaledPixelValue(28.0, textScale, screenScale);
+    CGFloat locationSize = (CGFloat)QuietScaledPixelValue(16.0, textScale, screenScale);
+    CGFloat daylightSize = (CGFloat)QuietScaledPixelValue(12.0, textScale, screenScale);
+    _photoTimeLabel.font = QuietFontAtIndex(timeIndex, timeSize,
+        [UIFont systemFontOfSize:timeSize weight:UIFontWeightThin]);
+    _photoDateLabel.font = QuietFontAtIndex(dateIndex, dateSize,
+        [UIFont systemFontOfSize:dateSize]);
+    _photoWeatherTemperatureLabel.font = QuietFontAtIndex(weatherIndex,
+        temperatureSize, [UIFont systemFontOfSize:temperatureSize
+        weight:UIFontWeightLight]);
+    _photoWeatherLocationLabel.font = QuietFontAtIndex(weatherIndex, locationSize,
+        [UIFont systemFontOfSize:locationSize]);
+    _photoDaylightLabel.font = QuietFontAtIndex(weatherIndex, daylightSize,
+        [UIFont systemFontOfSize:daylightSize]);
+    QuietApplyContentsScale(_photoClockPanel, screenScale);
+    QuietApplyContentsScale(_photoWeatherIconView,
+        (CGFloat)QuietRenderingScale(screenScale, textScale));
     for (UIView *view in _photoToolControls.subviews) {
         if ([view isKindOfClass:[UIButton class]]) {
             ((UIButton *)view).titleLabel.font =

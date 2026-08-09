@@ -4,6 +4,12 @@ This is a standalone armv7/iOS 9 integration build. It uses its own package,
 bundle, executable, preferences and TCP port, so the verified LegacyPad Display
 app remains installed and unchanged.
 
+The current device-tested source is build 21. For the complete Traditional
+Chinese development summary—including hardware conditions, the paired Mac app,
+architecture decisions, data-partition deployment, features, permissions,
+performance work, licensing and rollback—see
+[`docs/QuietPanel-iOS-armv7-Development-Summary.md`](../docs/QuietPanel-iOS-armv7-Development-Summary.md).
+
 - Cydia package and bundle: `tw.codex.quietpanel`
 - App and executable: `QuietPanel`
 - Receiver port: `9001` (`LegacyPad Display` continues to use `9000`)
@@ -34,6 +40,10 @@ app remains installed and unchanged.
 - Swipe left or right to switch pages.
 - The Mac controller chooses which pages appear and always keeps at least one
   enabled. All pages share the verified USB/OpenDisplay connection.
+- Build 21 renders clock, date, weather and daylight text directly at their
+  final pixel-aligned size instead of enlarging a smaller label backing store.
+  This improves clarity on the iPad mini 1's 1× display without changing the
+  selected fonts, layout, gestures or shadow settings.
 - While the dashboard or data pages are visible, the receiver keeps the virtual display connected but
   skips H.264 decoding. The matching Mac sender also skips encoding and video
   traffic. Returning to page 2 requests a fresh keyframe.
@@ -47,6 +57,12 @@ THEOS=/absolute/path/to/theos make clean package FINALPACKAGE=1
 
 LegacyPad Display remains an independent app and rollback baseline.
 Weather data is provided by Open-Meteo under CC BY 4.0.
+
+The Theos package is useful for development and Cydia testing. The verified
+daily-use installation keeps the app bundle in an iOS data-partition app
+container so the small jailbroken system partition is not consumed by the app
+and its fonts. Do not hard-code a container UUID; preserve the previous bundle
+before an atomic replacement.
 
 Version 0.6.0 keeps those features while reducing steady-state work: each page
 only runs the timers it renders, the photo clock updates on minute boundaries,
