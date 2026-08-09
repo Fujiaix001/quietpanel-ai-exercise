@@ -1200,6 +1200,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     UIImageView *_photoImageView;
     UIButton *_photoSettingsButton;
     UIView *_photoClockPanel;
+    UIView *_photoClockBackgroundView;
     UIView *_photoToolControls;
     UILabel *_photoToolStatusLabel;
     NSArray *_photoToolActions;
@@ -1479,9 +1480,15 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
     _photoClockPanel = [[UIView alloc] initWithFrame:CGRectMake(
         self.view.bounds.size.width - 452, 22, 420, 220)];
-    _photoClockPanel.backgroundColor = [UIColor colorWithWhite:0 alpha:0.42];
-    _photoClockPanel.layer.cornerRadius = 14.0;
+    _photoClockPanel.backgroundColor = [UIColor clearColor];
     [_photoView addSubview:_photoClockPanel];
+
+    _photoClockBackgroundView = [[UIView alloc]
+        initWithFrame:CGRectMake(140, 0, 280, 220)];
+    _photoClockBackgroundView.backgroundColor = [UIColor colorWithWhite:0 alpha:0.42];
+    _photoClockBackgroundView.layer.cornerRadius = 14.0;
+    _photoClockBackgroundView.userInteractionEnabled = NO;
+    [_photoClockPanel addSubview:_photoClockBackgroundView];
 
     _photoClockPan = [[UIPanGestureRecognizer alloc]
         initWithTarget:self action:@selector(photoClockPanned:)];
@@ -1829,10 +1836,11 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     if (!_photoClockPanel) return;
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     BOOL background = [self quietBoolForKey:kQuietClockBackgroundKey defaultValue:YES];
-    _photoClockPanel.backgroundColor = background
+    _photoClockBackgroundView.backgroundColor = background
         ? [UIColor colorWithWhite:0 alpha:0.42] : [UIColor clearColor];
-    _photoClockPanel.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
-    _photoClockPanel.layer.borderWidth = background ? 1.0 : 0.0;
+    _photoClockBackgroundView.layer.borderColor =
+        [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
+    _photoClockBackgroundView.layer.borderWidth = background ? 1.0 : 0.0;
     [self layoutPhotoClockContent];
     CGFloat scale = [defaults objectForKey:kQuietClockScaleKey]
         ? [defaults doubleForKey:kQuietClockScaleKey] : 1.0;
