@@ -1,4 +1,4 @@
-# QuietPanel iOS 0.4.0
+# QuietPanel iOS 0.6.0
 
 This is a standalone armv7/iOS 9 integration build. It uses its own package,
 bundle, executable, preferences and TCP port, so the verified LegacyPad Display
@@ -11,11 +11,15 @@ app remains installed and unchanged.
 - Page 1 is a live Mac dashboard: two-minute CPU/memory history, network
   throughput, memory/disk capacity, uptime, load, clock and connection status.
 - Page 2 is the existing 1024×768 OpenDisplay receiver, used as a real extended
-  Mac display.
+  Mac display. A single tap maps through the aspect-fit video area to one Mac
+  left click; QuietPanel Display needs macOS Accessibility permission.
 - Page 3 is a local-photo clock. Its iPad settings can select multiple Photos
   albums, including Finder/iTunes-synced albums. Tap the screen to reveal the
-  settings button for five seconds; drag the clock with one finger or pinch to
-  resize it. Position, size and the optional translucent panel are stored on
+  settings button for five seconds; hold the clock still for about 0.35 seconds
+  before dragging it with one finger, or pinch to resize and move it. A direct
+  horizontal gesture changes pages even over an enlarged clock; clock dragging
+  never starts without the deliberate hold. Up to 20% of an enlarged clock may move beyond an edge while remaining
+  recoverable. Position, size and the optional translucent panel are stored on
   the iPad. It includes 19 redistributable open fonts plus an optional local,
   non-distributable Storopia subset for independent time, date and weather type.
 - Weather follows the Android edition's Open-Meteo payload and cache policy.
@@ -44,5 +48,8 @@ THEOS=/absolute/path/to/theos make clean package FINALPACKAGE=1
 LegacyPad Display remains an independent app and rollback baseline.
 Weather data is provided by Open-Meteo under CC BY 4.0.
 
-Version 0.4.0 adds the second photo-clock work page, touch-guarded Mac actions,
-movable/resizable clock controls, a panel-background switch and more fonts.
+Version 0.6.0 keeps those features while reducing steady-state work: each page
+only runs the timers it renders, the photo clock updates on minute boundaries,
+photo requests match the actual panel resolution, and H.264 frames go directly
+into one CoreMedia decode buffer instead of several temporary copies. The iPad
+also reports its exact page so the Mac can suspend unused metrics and cursor work.

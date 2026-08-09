@@ -89,6 +89,46 @@ static size_t QuietNormalizePages(const int *requested, size_t count,
     return enabledCount;
 }
 
+typedef struct {
+    double minimum;
+    double maximum;
+} QuietScalarRange;
+
+static QuietScalarRange QuietClockCenterRange(double viewport, double panel,
+                                               double overflowFraction) {
+    if (!isfinite(viewport) || !isfinite(panel) || viewport <= 0 || panel <= 0) {
+        return (QuietScalarRange){0, 0};
+    }
+    overflowFraction = fmin(0.45, fmax(0.0, overflowFraction));
+    double overflow = panel * overflowFraction;
+    double minimum = panel / 2.0 + 12.0 - overflow;
+    double maximum = viewport - panel / 2.0 - 12.0 + overflow;
+    if (maximum < minimum) minimum = maximum = viewport / 2.0;
+    return (QuietScalarRange){minimum, maximum};
+}
+
+static int QuietNormalizeVideoPoint(double pointX, double pointY,
+                                    double viewWidth, double viewHeight,
+                                    double videoWidth, double videoHeight,
+                                    double *normalizedX, double *normalizedY) {
+    if (!normalizedX || !normalizedY ||
+        !isfinite(pointX) || !isfinite(pointY) ||
+        viewWidth <= 0 || viewHeight <= 0 ||
+        videoWidth <= 0 || videoHeight <= 0) return 0;
+
+    double scale = fmin(viewWidth / videoWidth, viewHeight / videoHeight);
+    double width = videoWidth * scale;
+    double height = videoHeight * scale;
+    double originX = (viewWidth - width) / 2.0;
+    double originY = (viewHeight - height) / 2.0;
+    if (pointX < originX || pointX > originX + width ||
+        pointY < originY || pointY > originY + height) return 0;
+
+    *normalizedX = fmin(1.0, fmax(0.0, (pointX - originX) / width));
+    *normalizedY = fmin(1.0, fmax(0.0, (pointY - originY) / height));
+    return 1;
+}
+
 #ifdef LEGACY_PROTOCOL_TEST
 
 #include <assert.h>
@@ -135,6 +175,17 @@ int main(void) {
     assert(QuietClampClockScale(1.4) == 1.4);
     assert(QuietClampClockScale(8.0) == 2.5);
     assert(QuietClampClockScale(NAN) == 1.0);
+    QuietScalarRange strictRange = QuietClockCenterRange(1024, 1000, 0);
+    QuietScalarRange overflowRange = QuietClockCenterRange(1024, 1000, 0.2);
+    assert(strictRange.minimum == 512 && strictRange.maximum == 512);
+    assert(overflowRange.minimum == 312 && overflowRange.maximum == 712);
+    double x = 0, y = 0;
+    assert(QuietNormalizeVideoPoint(500, 500, 1000, 1000, 1600, 900, &x, &y));
+    assert(fabs(x - 0.5) < 0.0001 && fabs(y - 0.5) < 0.0001);
+    assert(!QuietNormalizeVideoPoint(500, 100, 1000, 1000, 1600, 900, &x, &y));
+    assert(QuietNormalizeVideoPoint(0, 500, 1000, 1000, 1600, 900, &x, &y));
+    assert(x == 0.0 && fabs(y - 0.5) < 0.0001);
+    assert(!QuietNormalizeVideoPoint(0, 0, 0, 1000, 1600, 900, &x, &y));
     puts("protocol parser: ok");
     return 0;
 }
@@ -158,6 +209,7 @@ static const uint16_t kLegacyPort = 9001;
 static const uint32_t kMaximumPayload = 16 * 1024 * 1024;
 static NSString *const kQuietAllPhotosIdentifier = @"@all";
 static NSString *const kQuietPhotoAlbumIDsKey = @"QuietPanel.photoAlbumIDs";
+static NSString *const kQuietPhotoIntervalKey = @"QuietPanel.photoInterval";
 static NSString *const kQuietTimeFontKey = @"QuietPanel.timeFont";
 static NSString *const kQuietDateFontKey = @"QuietPanel.dateFont";
 static NSString *const kQuietWeatherFontKey = @"QuietPanel.weatherFont";
@@ -166,10 +218,12 @@ static NSString *const kQuietWeatherLocationKey = @"QuietPanel.weatherLocation";
 static NSString *const kQuietWeatherDaylightKey = @"QuietPanel.weatherDaylight";
 static NSString *const kQuietWeatherCacheKey = @"QuietPanel.weatherCache";
 static NSString *const kQuietClockBackgroundKey = @"QuietPanel.clockBackground";
+static NSString *const kQuietClockLayoutKey = @"QuietPanel.clockLayout";
 static NSString *const kQuietClockScaleKey = @"QuietPanel.clockScale";
 static NSString *const kQuietClockXRatioKey = @"QuietPanel.clockXRatio";
 static NSString *const kQuietClockYRatioKey = @"QuietPanel.clockYRatio";
 static NSString *const kQuietClockPositionKey = @"QuietPanel.clockPositionCustomized";
+static NSString *const kQuietClockPositionRangeKey = @"QuietPanel.clockPositionRange";
 
 static NSArray *QuietFontNames(void) {
     static NSArray *names;
@@ -295,8 +349,9 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 - (void)start;
 - (void)suspendForBackground;
 - (void)resumeAfterBackground;
-- (void)setDisplayActive:(BOOL)active;
+- (void)setDisplayActive:(BOOL)active page:(NSInteger)page;
 - (BOOL)sendAction:(NSString *)action;
+- (BOOL)sendTouchPhase:(NSString *)phase x:(double)x y:(double)y;
 @end
 
 @implementation LegacyReceiver {
@@ -321,6 +376,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     CMVideoFormatDescriptionRef _formatDescription;
     CFTimeInterval _lastKeyframeRequest;
     BOOL _displayActive;
+    NSInteger _displayPage;
     BOOL _decoderResetPending;
     uint64_t _nextActionID;
 }
@@ -354,6 +410,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         _serverFD = -1;
         _clientFD = -1;
         _displayActive = NO;
+        _displayPage = 0;
     }
     return self;
 }
@@ -432,21 +489,26 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     }
 }
 
-- (void)setDisplayActive:(BOOL)active {
+- (void)setDisplayActive:(BOOL)active page:(NSInteger)page {
     int socketFD;
+    BOOL activeChanged;
     @synchronized (self) {
-        if (_displayActive == active) return;
+        if (_displayActive == active && _displayPage == page) return;
+        activeChanged = _displayActive != active;
         _displayActive = active;
-        _decoderResetPending = YES;
+        _displayPage = page;
+        if (activeChanged) _decoderResetPending = YES;
         socketFD = _clientFD;
     }
-    dispatch_async(dispatch_get_main_queue(), ^{
-        self->_cursorView.hidden = YES;
-    });
+    if (activeChanged) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self->_cursorView.hidden = YES;
+        });
+    }
     if (socketFD >= 0) {
-        [self sendJSON:@{ @"type": @"visible", @"v": @(active) }
+        [self sendJSON:@{ @"type": @"visible", @"v": @(active), @"page": @(page) }
                 socket:socketFD];
-        if (active) [self requestKeyframe];
+        if (activeChanged && active) [self requestKeyframe];
     }
 }
 
@@ -461,6 +523,21 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     if (socketFD < 0) return NO;
     return [self sendJSON:@{
         @"v": @1, @"type": @"action", @"id": @(actionID), @"action": action
+    } socket:socketFD];
+}
+
+- (BOOL)sendTouchPhase:(NSString *)phase x:(double)x y:(double)y {
+    if (![phase isKindOfClass:[NSString class]] ||
+        !isfinite(x) || !isfinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return NO;
+    int socketFD;
+    BOOL displayActive;
+    @synchronized (self) {
+        socketFD = _clientFD;
+        displayActive = _displayActive && _displayPage == 1;
+    }
+    if (!displayActive || socketFD < 0) return NO;
+    return [self sendJSON:@{
+        @"type": @"touch", @"phase": phase, @"x": @(x), @"y": @(y)
     } socket:socketFD];
 }
 
@@ -521,10 +598,13 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         [self setStatus:@"已連接 Mac" connected:YES];
         if ([self sendHello:socketFD]) {
             BOOL displayActive;
+            NSInteger displayPage;
             @synchronized (self) {
                 displayActive = _displayActive;
+                displayPage = _displayPage;
             }
-            [self sendJSON:@{ @"type": @"visible", @"v": @(displayActive) }
+            [self sendJSON:@{ @"type": @"visible", @"v": @(displayActive),
+                              @"page": @(displayPage) }
                     socket:socketFD];
             if (displayActive) [self requestKeyframe];
             [self receiveFrames:socketFD];
@@ -735,15 +815,16 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     const uint8_t *bytes = payload.bytes;
     LegacyNALRange ranges[16];
     size_t count = LegacyFindAnnexBNALUnits(bytes, payload.length, ranges, 16);
-    NSMutableArray *videoNALUs = [NSMutableArray arrayWithCapacity:count];
+    LegacyNALRange videoRanges[16];
+    size_t videoCount = 0;
     BOOL isKeyframe = NO;
 
     for (size_t i = 0; i < count; i++) {
         LegacyNALRange range = ranges[i];
-        NSData *nalu = [NSData dataWithBytes:bytes + range.offset length:range.length];
-        if (nalu.length == 0) continue;
-        uint8_t type = ((const uint8_t *)nalu.bytes)[0] & 0x1f;
+        if (range.length == 0) continue;
+        uint8_t type = bytes[range.offset] & 0x1f;
         if (type == 7) {
+            NSData *nalu = [NSData dataWithBytes:bytes + range.offset length:range.length];
             if (![_sps isEqualToData:nalu]) {
                 _sps = nalu;
                 if (_formatDescription) {
@@ -752,6 +833,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
                 }
             }
         } else if (type == 8) {
+            NSData *nalu = [NSData dataWithBytes:bytes + range.offset length:range.length];
             if (![_pps isEqualToData:nalu]) {
                 _pps = nalu;
                 if (_formatDescription) {
@@ -760,14 +842,14 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
                 }
             }
         } else if (type == 1 || type == 5) {
-            [videoNALUs addObject:nalu];
+            videoRanges[videoCount++] = range;
             if (type == 5) isKeyframe = YES;
         }
     }
 
     if (!_formatDescription && _sps && _pps) [self buildFormatDescription];
-    if (_formatDescription && videoNALUs.count > 0) {
-        [self enqueueNALUs:videoNALUs keyframe:isKeyframe];
+    if (_formatDescription && videoCount > 0) {
+        [self enqueueNALBytes:bytes ranges:videoRanges count:videoCount keyframe:isKeyframe];
     }
 }
 
@@ -785,28 +867,41 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
             connected:YES];
 }
 
-- (void)enqueueNALUs:(NSArray *)nalus keyframe:(BOOL)isKeyframe {
-    NSMutableData *avcc = [NSMutableData data];
-    for (NSData *nalu in nalus) {
-        uint32_t length = htonl((uint32_t)nalu.length);
-        [avcc appendBytes:&length length:sizeof(length)];
-        [avcc appendData:nalu];
+- (void)enqueueNALBytes:(const uint8_t *)bytes
+                 ranges:(const LegacyNALRange *)ranges
+                  count:(size_t)count
+               keyframe:(BOOL)isKeyframe {
+    size_t avccLength = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (ranges[i].length > UINT32_MAX ||
+            ranges[i].length > SIZE_MAX - sizeof(uint32_t) - avccLength) return;
+        avccLength += sizeof(uint32_t) + ranges[i].length;
     }
 
     CMBlockBufferRef blockBuffer = NULL;
     OSStatus status = CMBlockBufferCreateWithMemoryBlock(
-        kCFAllocatorDefault, NULL, avcc.length, kCFAllocatorDefault, NULL,
-        0, avcc.length, 0, &blockBuffer);
+        kCFAllocatorDefault, NULL, avccLength, kCFAllocatorDefault, NULL,
+        0, avccLength, 0, &blockBuffer);
     if (status != kCMBlockBufferNoErr || !blockBuffer) return;
 
-    status = CMBlockBufferReplaceDataBytes(avcc.bytes, blockBuffer, 0, avcc.length);
+    size_t offset = 0;
+    for (size_t i = 0; i < count; i++) {
+        uint32_t length = htonl((uint32_t)ranges[i].length);
+        status = CMBlockBufferReplaceDataBytes(&length, blockBuffer, offset, sizeof(length));
+        if (status != kCMBlockBufferNoErr) break;
+        offset += sizeof(length);
+        status = CMBlockBufferReplaceDataBytes(bytes + ranges[i].offset,
+                                               blockBuffer, offset, ranges[i].length);
+        if (status != kCMBlockBufferNoErr) break;
+        offset += ranges[i].length;
+    }
     if (status != kCMBlockBufferNoErr) {
         CFRelease(blockBuffer);
         return;
     }
 
     CMSampleBufferRef sampleBuffer = NULL;
-    size_t sampleSize = avcc.length;
+    size_t sampleSize = avccLength;
     status = CMSampleBufferCreateReady(
         kCFAllocatorDefault, blockBuffer, _formatDescription, 1,
         0, NULL, 1, &sampleSize, &sampleBuffer);
@@ -1110,8 +1205,12 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     UILabel *_photoToolStatusLabel;
     NSArray *_photoToolActions;
     UIPanGestureRecognizer *_photoClockPan;
+    UILongPressGestureRecognizer *_photoClockDrag;
     UIPinchGestureRecognizer *_photoClockPinch;
+    UISwipeGestureRecognizer *_pageSwipeLeft;
+    UISwipeGestureRecognizer *_pageSwipeRight;
     CGPoint _photoClockPanStartCenter;
+    CGPoint _photoClockDragStartPoint;
     CGFloat _photoClockPinchStartScale;
     CGFloat _photoClockScale;
     UILabel *_photoTimeLabel;
@@ -1135,6 +1234,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     uint8_t _pageEnabled[QuietPageCount];
     BOOL _displayConnected;
     NSString *_displayStatus;
+    CGSize _displayPixelSize;
 }
 
 - (BOOL)prefersStatusBarHidden { return YES; }
@@ -1168,6 +1268,9 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _videoView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _videoView.backgroundColor = [UIColor blackColor];
     [self.view addSubview:_videoView];
+    UITapGestureRecognizer *displayTap = [[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(displayTapped:)];
+    [_videoView addGestureRecognizer:displayTap];
 
     _cursorView = [[UIImageView alloc] initWithFrame:CGRectZero];
     _cursorView.contentMode = UIViewContentModeScaleAspectFit;
@@ -1207,20 +1310,21 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _pageIndicator.layer.masksToBounds = YES;
     [self.view addSubview:_pageIndicator];
 
-    UISwipeGestureRecognizer *left = [[UISwipeGestureRecognizer alloc]
+    _pageSwipeLeft = [[UISwipeGestureRecognizer alloc]
         initWithTarget:self action:@selector(showNextPage)];
-    left.direction = UISwipeGestureRecognizerDirectionLeft;
-    [self.view addGestureRecognizer:left];
-    UISwipeGestureRecognizer *right = [[UISwipeGestureRecognizer alloc]
+    _pageSwipeLeft.direction = UISwipeGestureRecognizerDirectionLeft;
+    _pageSwipeLeft.delegate = self;
+    [_pageSwipeLeft requireGestureRecognizerToFail:_photoClockDrag];
+    [self.view addGestureRecognizer:_pageSwipeLeft];
+    _pageSwipeRight = [[UISwipeGestureRecognizer alloc]
         initWithTarget:self action:@selector(showPreviousPage)];
-    right.direction = UISwipeGestureRecognizerDirectionRight;
-    [self.view addGestureRecognizer:right];
+    _pageSwipeRight.direction = UISwipeGestureRecognizerDirectionRight;
+    _pageSwipeRight.delegate = self;
+    [_pageSwipeRight requireGestureRecognizerToFail:_photoClockDrag];
+    [self.view addGestureRecognizer:_pageSwipeRight];
 
     _displayStatus = @"正在啟動";
     [self loadNASACache];
-    [self updateClock];
-    _clockTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
-        target:self selector:@selector(updateClock) userInfo:nil repeats:YES];
     [self showPage:0];
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -1248,7 +1352,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [_dashboardView addSubview:title];
 
     UILabel *version = [[UILabel alloc] initWithFrame:CGRectMake(32, 55, 460, 24)];
-    version.text = @"Mac 即時狀態 · 五合一工作面板 · 0.4.0";
+    version.text = @"Mac 即時狀態 · 五合一工作面板 · 0.6.0";
     version.textColor = [UIColor colorWithWhite:0.55 alpha:1.0];
     version.font = [UIFont systemFontOfSize:13.0];
     [_dashboardView addSubview:version];
@@ -1382,8 +1486,16 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
     _photoClockPan = [[UIPanGestureRecognizer alloc]
         initWithTarget:self action:@selector(photoClockPanned:)];
+    _photoClockPan.minimumNumberOfTouches = 2;
+    _photoClockPan.maximumNumberOfTouches = 2;
     _photoClockPan.delegate = self;
     [_photoClockPanel addGestureRecognizer:_photoClockPan];
+    _photoClockDrag = [[UILongPressGestureRecognizer alloc]
+        initWithTarget:self action:@selector(photoClockDragged:)];
+    _photoClockDrag.minimumPressDuration = 0.35;
+    _photoClockDrag.allowableMovement = 12.0;
+    _photoClockDrag.numberOfTouchesRequired = 1;
+    [_photoClockPanel addGestureRecognizer:_photoClockDrag];
     _photoClockPinch = [[UIPinchGestureRecognizer alloc]
         initWithTarget:self action:@selector(photoClockPinched:)];
     _photoClockPinch.delegate = self;
@@ -1393,6 +1505,8 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _photoTimeLabel.textAlignment = NSTextAlignmentRight;
     _photoTimeLabel.textColor = [UIColor whiteColor];
     _photoTimeLabel.font = [UIFont systemFontOfSize:78.0 weight:UIFontWeightThin];
+    _photoTimeLabel.adjustsFontSizeToFitWidth = YES;
+    _photoTimeLabel.minimumScaleFactor = 0.72;
     _photoTimeLabel.shadowColor = [UIColor blackColor];
     _photoTimeLabel.shadowOffset = CGSizeMake(1, 2);
     [_photoClockPanel addSubview:_photoTimeLabel];
@@ -1401,6 +1515,8 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _photoDateLabel.textAlignment = NSTextAlignmentRight;
     _photoDateLabel.textColor = [UIColor whiteColor];
     _photoDateLabel.font = [UIFont systemFontOfSize:22.0];
+    _photoDateLabel.adjustsFontSizeToFitWidth = YES;
+    _photoDateLabel.minimumScaleFactor = 0.72;
     _photoDateLabel.shadowColor = [UIColor blackColor];
     _photoDateLabel.shadowOffset = CGSizeMake(1, 1);
     [_photoClockPanel addSubview:_photoDateLabel];
@@ -1408,26 +1524,34 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _photoWeatherRow = [[UIView alloc] initWithFrame:CGRectMake(18, 132, 384, 46)];
     _photoWeatherIconLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 48, 44)];
     _photoWeatherIconLabel.font = [UIFont systemFontOfSize:34.0];
-    _photoWeatherIconLabel.textColor = [UIColor whiteColor];
+    _photoWeatherIconLabel.textColor = [UIColor colorWithRed:0.35 green:0.85 blue:1.0 alpha:1.0];
     _photoWeatherIconLabel.textAlignment = NSTextAlignmentCenter;
+    _photoWeatherIconLabel.shadowColor = [UIColor blackColor];
+    _photoWeatherIconLabel.shadowOffset = CGSizeMake(0, 1);
     [_photoWeatherRow addSubview:_photoWeatherIconLabel];
 
     _photoWeatherTemperatureLabel = [[UILabel alloc] initWithFrame:CGRectMake(52, 0, 102, 44)];
     _photoWeatherTemperatureLabel.textColor = [UIColor whiteColor];
     _photoWeatherTemperatureLabel.font = [UIFont systemFontOfSize:28.0 weight:UIFontWeightLight];
+    _photoWeatherTemperatureLabel.adjustsFontSizeToFitWidth = YES;
+    _photoWeatherTemperatureLabel.minimumScaleFactor = 0.72;
+    _photoWeatherTemperatureLabel.shadowColor = [UIColor blackColor];
+    _photoWeatherTemperatureLabel.shadowOffset = CGSizeMake(0, 1);
     [_photoWeatherRow addSubview:_photoWeatherTemperatureLabel];
 
     _photoWeatherLocationLabel = [[UILabel alloc] initWithFrame:CGRectMake(156, 2, 228, 40)];
-    _photoWeatherLocationLabel.textColor = [UIColor colorWithWhite:0.9 alpha:1.0];
+    _photoWeatherLocationLabel.textColor = [UIColor colorWithWhite:0.82 alpha:1.0];
     _photoWeatherLocationLabel.font = [UIFont systemFontOfSize:16.0];
     _photoWeatherLocationLabel.textAlignment = NSTextAlignmentRight;
     _photoWeatherLocationLabel.adjustsFontSizeToFitWidth = YES;
     _photoWeatherLocationLabel.minimumScaleFactor = 0.7;
+    _photoWeatherLocationLabel.shadowColor = [UIColor blackColor];
+    _photoWeatherLocationLabel.shadowOffset = CGSizeMake(0, 1);
     [_photoWeatherRow addSubview:_photoWeatherLocationLabel];
     _photoWeatherRow.hidden = YES;
     [_photoClockPanel addSubview:_photoWeatherRow];
 
-    _photoDaylightLabel = [[UILabel alloc] initWithFrame:CGRectMake(18, 181, 384, 22)];
+    _photoDaylightLabel = [[UILabel alloc] initWithFrame:CGRectMake(170, 181, 232, 22)];
     _photoDaylightLabel.textColor = [UIColor colorWithWhite:0.84 alpha:1.0];
     _photoDaylightLabel.font = [UIFont systemFontOfSize:12.0];
     _photoDaylightLabel.textAlignment = NSTextAlignmentRight;
@@ -1436,7 +1560,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
     _photoDaylightProgress = [[UIProgressView alloc] initWithProgressViewStyle:
         UIProgressViewStyleDefault];
-    _photoDaylightProgress.frame = CGRectMake(18, 211, 384, 4);
+    _photoDaylightProgress.frame = CGRectMake(170, 211, 232, 3);
     _photoDaylightProgress.progressTintColor = [UIColor colorWithRed:1.0 green:0.75 blue:0.2 alpha:1.0];
     _photoDaylightProgress.trackTintColor = [UIColor colorWithWhite:1.0 alpha:0.18];
     _photoDaylightProgress.hidden = YES;
@@ -1458,43 +1582,36 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [_photoView addSubview:_photoStatusLabel];
 
     _photoToolControls = [[UIView alloc] initWithFrame:CGRectMake(
-        24, self.view.bounds.size.height - 306, 190, 282)];
+        24, self.view.bounds.size.height - 258, 190, 234)];
     _photoToolControls.autoresizingMask = UIViewAutoresizingFlexibleTopMargin |
                                           UIViewAutoresizingFlexibleRightMargin;
-    UILabel *touchGuard = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 190, 30)];
-    touchGuard.backgroundColor = [UIColor colorWithWhite:0 alpha:0.58];
-    touchGuard.textColor = [UIColor colorWithWhite:0.86 alpha:1.0];
-    touchGuard.textAlignment = NSTextAlignmentCenter;
-    touchGuard.font = [UIFont systemFontOfSize:13.0];
-    touchGuard.text = @"防誤觸已開啟";
-    touchGuard.layer.cornerRadius = 8.0;
-    touchGuard.layer.masksToBounds = YES;
-    [_photoToolControls addSubview:touchGuard];
 
     _photoToolActions = @[@"open_youtube", @"screenshot_all", @"paste"];
-    NSArray *toolTitles = @[@"YOUTUBE", @"全螢幕截圖", @"貼上"];
+    NSArray *toolTitles = @[@"YouTube", @"全螢幕截圖", @"貼上"];
     for (NSInteger index = 0; index < (NSInteger)toolTitles.count; index++) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-        button.frame = CGRectMake(0, 38 + index * 66, 190, 58);
+        button.frame = CGRectMake(0, index * 66, 190, 58);
         button.tag = index;
         button.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.68];
         button.tintColor = [UIColor whiteColor];
-        button.titleLabel.font = [UIFont systemFontOfSize:16.0];
+        button.titleLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightSemibold];
         button.layer.cornerRadius = 10.0;
+        button.layer.borderColor = [UIColor colorWithRed:0.35 green:0.85 blue:1.0 alpha:0.28].CGColor;
+        button.layer.borderWidth = 1.0;
         [button setTitle:toolTitles[index] forState:UIControlStateNormal];
         [button addTarget:self action:@selector(photoToolTapped:)
             forControlEvents:UIControlEventTouchUpInside];
         [_photoToolControls addSubview:button];
     }
-    _photoToolStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 240, 190, 42)];
+    _photoToolStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 202, 190, 32)];
     _photoToolStatusLabel.backgroundColor = [UIColor colorWithWhite:0 alpha:0.48];
     _photoToolStatusLabel.textColor = [UIColor colorWithWhite:0.86 alpha:1.0];
     _photoToolStatusLabel.textAlignment = NSTextAlignmentCenter;
     _photoToolStatusLabel.font = [UIFont systemFontOfSize:12.0];
-    _photoToolStatusLabel.numberOfLines = 2;
-    _photoToolStatusLabel.text = @"只有快捷鍵可操作";
+    _photoToolStatusLabel.text = nil;
     _photoToolStatusLabel.layer.cornerRadius = 8.0;
     _photoToolStatusLabel.layer.masksToBounds = YES;
+    _photoToolStatusLabel.hidden = YES;
     [_photoToolControls addSubview:_photoToolStatusLabel];
     _photoToolControls.hidden = YES;
     [_photoView addSubview:_photoToolControls];
@@ -1571,16 +1688,86 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
 - (void)updateClock {
     NSDate *now = [NSDate date];
-    _clockLabel.text = [_timeFormatter stringFromDate:now];
-    _dateLabel.text = [_dateFormatter stringFromDate:now];
-    _photoTimeLabel.text = [_photoTimeFormatter stringFromDate:now];
-    _photoDateLabel.text = [_photoDateFormatter stringFromDate:now];
-    [self updateDaylightProgress];
+    if (_currentPage == 0) {
+        _clockLabel.text = [_timeFormatter stringFromDate:now];
+        _dateLabel.text = [_dateFormatter stringFromDate:now];
+    } else if (_currentPage == 2 || _currentPage == 3) {
+        _photoTimeLabel.text = [_photoTimeFormatter stringFromDate:now];
+        _photoDateLabel.text = [_photoDateFormatter stringFromDate:now];
+        [self updateDaylightProgress];
+    }
+}
+
+- (void)updateClockTimerForCurrentPage {
+    [_clockTimer invalidate];
+    _clockTimer = nil;
+    if (_currentPage != 0 && _currentPage != 2 && _currentPage != 3) return;
+
+    [self updateClock];
+    NSTimeInterval interval = _currentPage == 0 ? 1.0 : 60.0;
+    _clockTimer = [NSTimer scheduledTimerWithTimeInterval:interval
+        target:self selector:@selector(updateClock) userInfo:nil repeats:YES];
+    if (_currentPage == 0) {
+        _clockTimer.tolerance = 0.05;
+    } else {
+        // The photo clock has minute precision. Align its 60-second timer to
+        // the next minute boundary instead of formatting four labels each second.
+        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+        NSTimeInterval delay = 60.02 - fmod(now, 60.0);
+        _clockTimer.fireDate = [NSDate dateWithTimeIntervalSinceNow:delay];
+        _clockTimer.tolerance = 0.15;
+    }
 }
 
 - (BOOL)quietBoolForKey:(NSString *)key defaultValue:(BOOL)defaultValue {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     return [defaults objectForKey:key] ? [defaults boolForKey:key] : defaultValue;
+}
+
+- (NSInteger)photoClockLayoutStyle {
+    return [[NSUserDefaults standardUserDefaults] integerForKey:kQuietClockLayoutKey] == 1
+        ? 1 : 0;
+}
+
+- (void)layoutPhotoClockContent {
+    if (!_photoClockPanel) return;
+    _photoDaylightLabel.frame = CGRectMake(170, 181, 232, 22);
+    _photoDaylightProgress.frame = CGRectMake(170, 211, 232, 3);
+    BOOL split = [self photoClockLayoutStyle] == 1 && !_photoWeatherRow.hidden;
+    if (split) {
+        _photoTimeLabel.frame = CGRectMake(152, -2, 250, 98);
+        _photoDateLabel.frame = CGRectMake(152, 94, 250, 36);
+        _photoWeatherRow.frame = CGRectMake(18, 28, 132, 106);
+        _photoWeatherLocationLabel.textAlignment = NSTextAlignmentLeft;
+        _photoWeatherLocationLabel.numberOfLines = 2;
+
+        CGSize iconSize = [_photoWeatherIconLabel sizeThatFits:CGSizeMake(44, 48)];
+        CGFloat iconWidth = MIN(42.0, MAX(30.0, ceil(iconSize.width) + 2.0));
+        _photoWeatherIconLabel.frame = CGRectMake(0, 0, iconWidth, 48);
+        _photoWeatherTemperatureLabel.frame = CGRectMake(
+            iconWidth + 4.0, 0, 132.0 - iconWidth - 4.0, 48);
+        _photoWeatherLocationLabel.frame = CGRectMake(0, 50, 132, 48);
+    } else {
+        _photoTimeLabel.frame = CGRectMake(18, 0, 384, 96);
+        _photoDateLabel.frame = CGRectMake(18, 92, 384, 38);
+        _photoWeatherRow.frame = CGRectMake(18, 132, 384, 46);
+        _photoWeatherLocationLabel.textAlignment = NSTextAlignmentRight;
+        _photoWeatherLocationLabel.numberOfLines = 1;
+
+        CGSize iconSize = [_photoWeatherIconLabel sizeThatFits:CGSizeMake(44, 44)];
+        CGSize temperatureSize = [_photoWeatherTemperatureLabel
+            sizeThatFits:CGSizeMake(116, 44)];
+        CGFloat iconWidth = MIN(42.0, MAX(30.0, ceil(iconSize.width) + 2.0));
+        CGFloat temperatureWidth = MIN(116.0,
+            MAX(72.0, ceil(temperatureSize.width) + 4.0));
+        CGFloat temperatureX = 384.0 - temperatureWidth;
+        CGFloat iconX = temperatureX - iconWidth - 4.0;
+        _photoWeatherIconLabel.frame = CGRectMake(iconX, 0, iconWidth, 44);
+        _photoWeatherTemperatureLabel.frame = CGRectMake(
+            temperatureX, 0, temperatureWidth, 44);
+        _photoWeatherLocationLabel.frame = CGRectMake(
+            0, 2, MAX(0.0, iconX - 10.0), 40);
+    }
 }
 
 - (void)applyPhotoClockScale:(CGFloat)requestedScale {
@@ -1593,20 +1780,24 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         _photoClockScale, _photoClockScale);
 }
 
+- (CGRect)photoClockCenterRangeAllowingOverflow:(BOOL)allowOverflow {
+    CGFloat width = CGRectGetWidth(_photoClockPanel.bounds) * _photoClockScale;
+    CGFloat height = CGRectGetHeight(_photoClockPanel.bounds) * _photoClockScale;
+    CGFloat overflow = allowOverflow ? 0.2 : 0.0;
+    QuietScalarRange x = QuietClockCenterRange(
+        self.view.bounds.size.width, width, overflow);
+    QuietScalarRange y = QuietClockCenterRange(
+        self.view.bounds.size.height, height, overflow);
+    return CGRectMake(x.minimum, y.minimum,
+                      x.maximum - x.minimum, y.maximum - y.minimum);
+}
+
 - (void)constrainPhotoClock {
     if (!_photoClockPanel) return;
-    CGFloat halfWidth = CGRectGetWidth(_photoClockPanel.frame) / 2.0;
-    CGFloat halfHeight = CGRectGetHeight(_photoClockPanel.frame) / 2.0;
-    CGFloat margin = 12.0;
-    CGFloat minimumX = halfWidth + margin;
-    CGFloat maximumX = self.view.bounds.size.width - halfWidth - margin;
-    CGFloat minimumY = halfHeight + margin;
-    CGFloat maximumY = self.view.bounds.size.height - halfHeight - margin;
+    CGRect range = [self photoClockCenterRangeAllowingOverflow:YES];
     CGPoint center = _photoClockPanel.center;
-    center.x = maximumX < minimumX ? CGRectGetMidX(self.view.bounds)
-                                   : MIN(maximumX, MAX(minimumX, center.x));
-    center.y = maximumY < minimumY ? CGRectGetMidY(self.view.bounds)
-                                   : MIN(maximumY, MAX(minimumY, center.y));
+    center.x = MIN(CGRectGetMaxX(range), MAX(CGRectGetMinX(range), center.x));
+    center.y = MIN(CGRectGetMaxY(range), MAX(CGRectGetMinY(range), center.y));
     _photoClockPanel.center = center;
 }
 
@@ -1619,35 +1810,27 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         [self constrainPhotoClock];
         return;
     }
-    CGFloat halfWidth = CGRectGetWidth(_photoClockPanel.frame) / 2.0;
-    CGFloat halfHeight = CGRectGetHeight(_photoClockPanel.frame) / 2.0;
-    CGFloat minimumX = halfWidth + 12.0;
-    CGFloat maximumX = self.view.bounds.size.width - halfWidth - 12.0;
-    CGFloat minimumY = halfHeight + 12.0;
-    CGFloat maximumY = self.view.bounds.size.height - halfHeight - 12.0;
+    BOOL usesOverflowRange = [defaults integerForKey:kQuietClockPositionRangeKey] >= 1;
+    CGRect range = [self photoClockCenterRangeAllowingOverflow:usesOverflowRange];
     CGFloat xRatio = MIN(1.0, MAX(0.0, [defaults doubleForKey:kQuietClockXRatioKey]));
     CGFloat yRatio = MIN(1.0, MAX(0.0, [defaults doubleForKey:kQuietClockYRatioKey]));
     _photoClockPanel.center = CGPointMake(
-        minimumX + MAX(0.0, maximumX - minimumX) * xRatio,
-        minimumY + MAX(0.0, maximumY - minimumY) * yRatio);
+        CGRectGetMinX(range) + CGRectGetWidth(range) * xRatio,
+        CGRectGetMinY(range) + CGRectGetHeight(range) * yRatio);
     [self constrainPhotoClock];
 }
 
 - (void)savePhotoClockPosition {
-    CGFloat halfWidth = CGRectGetWidth(_photoClockPanel.frame) / 2.0;
-    CGFloat halfHeight = CGRectGetHeight(_photoClockPanel.frame) / 2.0;
-    CGFloat minimumX = halfWidth + 12.0;
-    CGFloat maximumX = self.view.bounds.size.width - halfWidth - 12.0;
-    CGFloat minimumY = halfHeight + 12.0;
-    CGFloat maximumY = self.view.bounds.size.height - halfHeight - 12.0;
-    CGFloat width = MAX(1.0, maximumX - minimumX);
-    CGFloat height = MAX(1.0, maximumY - minimumY);
+    CGRect range = [self photoClockCenterRangeAllowingOverflow:YES];
+    CGFloat width = MAX(1.0, CGRectGetWidth(range));
+    CGFloat height = MAX(1.0, CGRectGetHeight(range));
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setDouble:MIN(1.0, MAX(0.0,
-        (_photoClockPanel.center.x - minimumX) / width)) forKey:kQuietClockXRatioKey];
+        (_photoClockPanel.center.x - CGRectGetMinX(range)) / width)) forKey:kQuietClockXRatioKey];
     [defaults setDouble:MIN(1.0, MAX(0.0,
-        (_photoClockPanel.center.y - minimumY) / height)) forKey:kQuietClockYRatioKey];
+        (_photoClockPanel.center.y - CGRectGetMinY(range)) / height)) forKey:kQuietClockYRatioKey];
     [defaults setBool:YES forKey:kQuietClockPositionKey];
+    [defaults setInteger:1 forKey:kQuietClockPositionRangeKey];
     [defaults synchronize];
 }
 
@@ -1657,6 +1840,9 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     BOOL background = [self quietBoolForKey:kQuietClockBackgroundKey defaultValue:YES];
     _photoClockPanel.backgroundColor = background
         ? [UIColor colorWithWhite:0 alpha:0.42] : [UIColor clearColor];
+    _photoClockPanel.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
+    _photoClockPanel.layer.borderWidth = background ? 1.0 : 0.0;
+    [self layoutPhotoClockContent];
     CGFloat scale = [defaults objectForKey:kQuietClockScaleKey]
         ? [defaults doubleForKey:kQuietClockScaleKey] : 1.0;
     [self applyPhotoClockScale:scale];
@@ -1669,6 +1855,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [defaults removeObjectForKey:kQuietClockPositionKey];
     [defaults removeObjectForKey:kQuietClockXRatioKey];
     [defaults removeObjectForKey:kQuietClockYRatioKey];
+    [defaults removeObjectForKey:kQuietClockPositionRangeKey];
     [defaults synchronize];
     [self applyPhotoClockSettings];
 }
@@ -1687,6 +1874,39 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     } else if (gesture.state == UIGestureRecognizerStateEnded ||
                gesture.state == UIGestureRecognizerStateCancelled) {
         [self savePhotoClockPosition];
+    }
+}
+
+- (void)photoClockDragged:(UILongPressGestureRecognizer *)gesture {
+    if (_currentPage != 2) return;
+    [self showPhotoSettingsButton];
+    CGPoint point = [gesture locationInView:_photoView];
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        _photoClockPanStartCenter = _photoClockPanel.center;
+        _photoClockDragStartPoint = point;
+    } else if (gesture.state == UIGestureRecognizerStateChanged) {
+        _photoClockPanel.center = CGPointMake(
+            _photoClockPanStartCenter.x + point.x - _photoClockDragStartPoint.x,
+            _photoClockPanStartCenter.y + point.y - _photoClockDragStartPoint.y);
+        [self constrainPhotoClock];
+    } else if (gesture.state == UIGestureRecognizerStateEnded ||
+               gesture.state == UIGestureRecognizerStateCancelled) {
+        [self savePhotoClockPosition];
+    }
+}
+
+- (void)displayTapped:(UITapGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateRecognized ||
+        _currentPage != 1 || !_displayConnected || !_receiver) return;
+    CGPoint point = [gesture locationInView:_videoView];
+    CGSize viewSize = _videoView.bounds.size;
+    double x, y;
+    if (!QuietNormalizeVideoPoint(point.x, point.y,
+                                  viewSize.width, viewSize.height,
+                                  _displayPixelSize.width, _displayPixelSize.height,
+                                  &x, &y)) return;
+    if ([_receiver sendTouchPhase:@"began" x:x y:y]) {
+        [_receiver sendTouchPhase:@"ended" x:x y:y];
     }
 }
 
@@ -1745,10 +1965,19 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         button.tag >= (NSInteger)_photoToolActions.count) return;
     NSString *action = _photoToolActions[button.tag];
     BOOL sent = [_receiver sendAction:action];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+        selector:@selector(hidePhotoToolStatus) object:nil];
+    _photoToolStatusLabel.hidden = NO;
     _photoToolStatusLabel.textColor = sent
         ? [UIColor colorWithWhite:0.86 alpha:1.0]
         : [UIColor colorWithRed:1.0 green:0.45 blue:0.35 alpha:1.0];
     _photoToolStatusLabel.text = sent ? @"指令已送出" : @"Mac 尚未連線";
+    [self performSelector:@selector(hidePhotoToolStatus)
+               withObject:nil afterDelay:2.0];
+}
+
+- (void)hidePhotoToolStatus {
+    _photoToolStatusLabel.hidden = YES;
 }
 
 - (NSArray *)selectedPhotoAlbumIdentifiers {
@@ -1800,6 +2029,13 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
             (void)action;
             [self presentAlbumPicker];
         }]];
+    [menu addAction:[UIAlertAction actionWithTitle:
+        [NSString stringWithFormat:@"輪播速度：%@", [self photoSlideshowIntervalText]]
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            (void)action;
+            [self performSelector:@selector(presentPhotoIntervalPicker)
+                       withObject:nil afterDelay:0.35];
+        }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"時間字形"
         style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
             (void)action;
@@ -1820,11 +2056,21 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     BOOL weather = [self quietBoolForKey:kQuietWeatherEnabledKey defaultValue:YES];
     BOOL location = [self quietBoolForKey:kQuietWeatherLocationKey defaultValue:NO];
     BOOL daylight = [self quietBoolForKey:kQuietWeatherDaylightKey defaultValue:YES];
+    NSInteger layoutStyle = [self photoClockLayoutStyle];
     [menu addAction:[UIAlertAction actionWithTitle:
         [NSString stringWithFormat:@"%@ 半透明底板", background ? @"✓" : @"○"]
         style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
             (void)action;
             [self togglePhotoPreferenceKey:kQuietClockBackgroundKey defaultValue:YES];
+        }]];
+    [menu addAction:[UIAlertAction actionWithTitle:
+        layoutStyle == 0 ? @"切換版面：左右資訊卡" : @"切換版面：緊湊右對齊"
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            (void)action;
+            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+            [defaults setInteger:layoutStyle == 0 ? 1 : 0 forKey:kQuietClockLayoutKey];
+            [defaults synchronize];
+            [self applyPhotoClockSettings];
         }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"重設時鐘位置與大小"
         style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
@@ -1855,6 +2101,50 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     popover.sourceView = _photoSettingsButton;
     popover.sourceRect = _photoSettingsButton.bounds;
     [self presentViewController:menu animated:YES completion:nil];
+}
+
+- (NSTimeInterval)photoSlideshowInterval {
+    NSTimeInterval interval = [[NSUserDefaults standardUserDefaults]
+        doubleForKey:kQuietPhotoIntervalKey];
+    return interval >= 5.0 ? interval : 45.0;
+}
+
+- (NSString *)photoSlideshowIntervalText {
+    NSInteger seconds = (NSInteger)([self photoSlideshowInterval] + 0.5);
+    if (seconds >= 60 && seconds % 60 == 0) {
+        return [NSString stringWithFormat:@"%ld 分鐘", (long)(seconds / 60)];
+    }
+    return [NSString stringWithFormat:@"%ld 秒", (long)seconds];
+}
+
+- (void)presentPhotoIntervalPicker {
+    UIAlertController *picker = [UIAlertController alertControllerWithTitle:@"相簿輪播速度"
+        message:@"選擇每張照片停留的時間"
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    NSInteger current = (NSInteger)([self photoSlideshowInterval] + 0.5);
+    NSArray *choices = @[@10, @30, @45, @60, @180];
+    for (NSNumber *choice in choices) {
+        NSInteger seconds = [choice integerValue];
+        NSString *name = seconds >= 60
+            ? [NSString stringWithFormat:@"%ld 分鐘", (long)(seconds / 60)]
+            : [NSString stringWithFormat:@"%ld 秒", (long)seconds];
+        NSString *title = [NSString stringWithFormat:@"%@%@",
+            seconds == current ? @"✓ " : @"", name];
+        [picker addAction:[UIAlertAction actionWithTitle:title
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                (void)action;
+                NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+                [defaults setDouble:[choice doubleValue] forKey:kQuietPhotoIntervalKey];
+                [defaults synchronize];
+                [self schedulePhotoTimer];
+            }]];
+    }
+    [picker addAction:[UIAlertAction actionWithTitle:@"取消"
+        style:UIAlertActionStyleCancel handler:nil]];
+    UIPopoverPresentationController *popover = picker.popoverPresentationController;
+    popover.sourceView = _photoSettingsButton;
+    popover.sourceRect = _photoSettingsButton.bounds;
+    [self presentViewController:picker animated:YES completion:nil];
 }
 
 - (void)presentAlbumPicker {
@@ -1954,11 +2244,10 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         [UIFont systemFontOfSize:16.0]);
     _photoDaylightLabel.font = QuietFontAtIndex(weatherIndex, 12.0,
         [UIFont systemFontOfSize:12.0]);
-    UIFont *toolFont = QuietFontAtIndex(timeIndex, 16.0,
-        [UIFont systemFontOfSize:16.0]);
     for (UIView *view in _photoToolControls.subviews) {
         if ([view isKindOfClass:[UIButton class]]) {
-            ((UIButton *)view).titleLabel.font = toolFont;
+            ((UIButton *)view).titleLabel.font =
+                [UIFont systemFontOfSize:16.0 weight:UIFontWeightSemibold];
         }
     }
 
@@ -1971,6 +2260,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     }
     [self updateClock];
     if (_weatherState) [self applyWeather:_weatherState];
+    else [self layoutPhotoClockContent];
 }
 
 - (void)loadWeatherCache {
@@ -1984,6 +2274,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _photoDaylightLabel.hidden = YES;
     _photoDaylightProgress.hidden = YES;
     _dashboardWeatherLabel.hidden = YES;
+    [self layoutPhotoClockContent];
 }
 
 - (void)applyWeather:(NSDictionary *)weather {
@@ -2029,6 +2320,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _photoWeatherLocationLabel.text = showLocation ? location : @"";
     _photoWeatherLocationLabel.hidden = !showLocation;
     _photoWeatherRow.hidden = NO;
+    [self layoutPhotoClockContent];
     _dashboardWeatherLabel.text = showLocation && location.length > 0
         ? [NSString stringWithFormat:@"%@  %@  %@", symbol, temperatureText, location]
         : [NSString stringWithFormat:@"%@  %@", symbol, temperatureText];
@@ -2224,9 +2516,11 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
 - (void)schedulePhotoTimer {
     [_photoTimer invalidate];
+    _photoTimer = nil;
     if ((_currentPage != 2 && _currentPage != 3) || _photoAssets.count == 0) return;
-    _photoTimer = [NSTimer scheduledTimerWithTimeInterval:45.0
+    _photoTimer = [NSTimer scheduledTimerWithTimeInterval:[self photoSlideshowInterval]
         target:self selector:@selector(showNextPhoto) userInfo:nil repeats:YES];
+    _photoTimer.tolerance = MIN(1.0, [self photoSlideshowInterval] * 0.05);
 }
 
 - (void)showNextPhoto {
@@ -2237,9 +2531,13 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     options.deliveryMode = PHImageRequestOptionsDeliveryModeHighQualityFormat;
     options.resizeMode = PHImageRequestOptionsResizeModeFast;
     options.networkAccessAllowed = NO;
+    CGFloat screenScale = [UIScreen mainScreen].scale;
+    CGSize viewSize = _photoImageView.bounds.size;
+    CGSize targetSize = CGSizeMake(MAX(1.0, viewSize.width * screenScale),
+                                   MAX(1.0, viewSize.height * screenScale));
     __weak LegacyViewController *weakSelf = self;
     [[PHImageManager defaultManager] requestImageForAsset:asset
-        targetSize:CGSizeMake(1280, 960)
+        targetSize:targetSize
         contentMode:PHImageContentModeAspectFill
         options:options
         resultHandler:^(UIImage *result, NSDictionary *info) {
@@ -2346,7 +2644,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
 - (void)updatePageIndicator {
     NSArray *names = @[@"系統", @"延伸螢幕", @"相簿時鐘",
-                       @"相簿快捷鍵 · 防誤觸", @"NASA"];
+                       @"快捷工具", @"NASA"];
     NSMutableArray *dots = [NSMutableArray array];
     for (NSInteger page = 0; page < QuietPageCount; page++) {
         if (_pageEnabled[page]) [dots addObject:page == _currentPage ? @"●" : @"○"];
@@ -2359,12 +2657,14 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     if (page < 0 || page >= QuietPageCount || !_pageEnabled[page]) {
         page = [self firstEnabledPage];
     }
+    BOOL wasPhotoPage = _currentPage == 2 || _currentPage == 3;
     _currentPage = page;
     _dashboardView.hidden = page != 0;
     _videoView.hidden = page != 1;
     _photoView.hidden = page != 2 && page != 3;
     _photoToolControls.hidden = page != 3;
     _photoClockPan.enabled = page == 2;
+    _photoClockDrag.enabled = page == 2;
     _photoClockPinch.enabled = page == 2;
     _nasaView.hidden = page != 4;
     BOOL displayPage = page == 1;
@@ -2373,19 +2673,22 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _dashboardStatusLabel.text = [NSString stringWithFormat:@"延伸螢幕：%@",
                                   _displayStatus ?: @"尚未啟動"];
     if (page == 2 || page == 3) {
-        [self applyPhotoClockSettings];
-        [self startPhotoSlideshow];
+        if (!wasPhotoPage) {
+            [self applyPhotoClockSettings];
+            [self startPhotoSlideshow];
+        }
     }
     else {
         [_photoTimer invalidate];
         _photoTimer = nil;
     }
     if (page != 2) [self hidePhotoSettingsButton];
+    [self updateClockTimerForCurrentPage];
     [self updatePageIndicator];
     [self.view bringSubviewToFront:_cursorView];
     [self.view bringSubviewToFront:_statusLabel];
     [self.view bringSubviewToFront:_pageIndicator];
-    [_receiver setDisplayActive:displayPage];
+    [_receiver setDisplayActive:displayPage page:page];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
@@ -2407,6 +2710,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     CGSize size = screen.bounds.size;
     NSInteger pixelsWide = (NSInteger)lrint(size.width * scale);
     NSInteger pixelsHigh = (NSInteger)lrint(size.height * scale);
+    _displayPixelSize = CGSizeMake(pixelsWide, pixelsHigh);
     __weak LegacyViewController *weakSelf = self;
     _receiver = [[LegacyReceiver alloc]
         initWithDisplayLayer:_videoView.displayLayer
@@ -2449,7 +2753,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
                 stringWithFormat:@"延伸螢幕：%@", status];
         }];
     [_receiver start];
-    [_receiver setDisplayActive:_currentPage == 1];
+    [_receiver setDisplayActive:_currentPage == 1 page:_currentPage];
 }
 
 - (void)dealloc {

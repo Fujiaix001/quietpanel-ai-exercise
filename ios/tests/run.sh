@@ -22,7 +22,7 @@ fi
 echo 'standalone identity: ok'
 
 page_transition=$(awk '
-  $0 == "- (void)setDisplayActive:(BOOL)active {" { capture = 1 }
+  $0 == "- (void)setDisplayActive:(BOOL)active page:(NSInteger)page {" { capture = 1 }
   capture { print }
   capture && /^}$/ { exit }
 ' "$repo_dir/main.m")
@@ -33,4 +33,18 @@ case "$page_transition" in
     ;;
 esac
 printf '%s\n' "$page_transition" | grep -q '@synchronized (self)'
+printf '%s\n' "$page_transition" | grep -q '@"page": @(page)'
 echo 'page transition queue: ok'
+
+grep -q 'kQuietClockLayoutKey' "$repo_dir/main.m"
+grep -q 'systemFontOfSize:16.0 weight:UIFontWeightSemibold' "$repo_dir/main.m"
+grep -q 'updateClockTimerForCurrentPage' "$repo_dir/main.m"
+grep -q 'targetSize:targetSize' "$repo_dir/main.m"
+grep -q '_photoClockDrag.minimumPressDuration = 0.35' "$repo_dir/main.m"
+grep -q 'requireGestureRecognizerToFail:_photoClockDrag' "$repo_dir/main.m"
+grep -q 'sendTouchPhase:@"began"' "$repo_dir/main.m"
+if grep -q '防誤觸已開啟\|只有快捷鍵可操作' "$repo_dir/main.m"; then
+  echo 'shortcut page still contains redundant guard copy' >&2
+  exit 1
+fi
+echo 'photo clock UX: ok'
