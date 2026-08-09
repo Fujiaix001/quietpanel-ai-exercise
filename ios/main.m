@@ -66,6 +66,10 @@ static QuietWeatherKind QuietWeatherKindForCode(int code) {
     return QuietWeatherCloudy;
 }
 
+static int LegacyShouldRestartServer(int backgrounded) {
+    return !backgrounded;
+}
+
 static size_t QuietNormalizePages(const int *requested, size_t count,
                                   uint8_t enabled[QuietPageCount]) {
     memset(enabled, 0, QuietPageCount);
@@ -120,6 +124,8 @@ int main(void) {
     assert(QuietWeatherKindForCode(61) == QuietWeatherRain);
     assert(QuietWeatherKindForCode(73) == QuietWeatherSnow);
     assert(QuietWeatherKindForCode(95) == QuietWeatherThunder);
+    assert(LegacyShouldRestartServer(0));
+    assert(!LegacyShouldRestartServer(1));
     puts("protocol parser: ok");
     return 0;
 }
@@ -268,6 +274,8 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
                      weatherHandler:(void (^)(NSDictionary *weather))weatherHandler
                        statusHandler:(void (^)(NSString *status, BOOL connected))statusHandler;
 - (void)start;
+- (void)suspendForBackground;
+- (void)resumeAfterBackground;
 - (void)setDisplayActive:(BOOL)active;
 @end
 
@@ -286,6 +294,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     int _serverFD;
     int _clientFD;
     BOOL _started;
+    BOOL _backgrounded;
     NSData *_sps;
     NSData *_pps;
     CMVideoFormatDescriptionRef _formatDescription;
@@ -347,6 +356,58 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     });
 }
 
+- (void)resumeAfterBackground {
+    int clientFD;
+    int serverFD;
+    @synchronized (self) {
+        _backgrounded = NO;
+        clientFD = _clientFD;
+        serverFD = _serverFD;
+    }
+    if (clientFD >= 0) {
+        [self setStatus:@"正在重新連接 Mac" connected:NO];
+        shutdown(clientFD, SHUT_RDWR);
+    }
+    if (serverFD < 0) {
+        dispatch_async(_queue, ^{
+            @synchronized (self) {
+                if (self->_backgrounded || self->_serverFD >= 0) return;
+            }
+            [self runServer];
+        });
+    }
+}
+
+- (void)suspendForBackground {
+    int clientFD;
+    int serverFD;
+    @synchronized (self) {
+        _backgrounded = YES;
+        clientFD = _clientFD;
+        serverFD = _serverFD;
+    }
+    [self setStatus:@"已暫停，返回後自動連接" connected:NO];
+    if (clientFD >= 0) {
+        [self sendJSON:@{@"type": @"sleeping"} socket:clientFD];
+        shutdown(clientFD, SHUT_RDWR);
+    }
+
+    // Wake accept() before iOS suspends the process. Old Darwin kernels do not
+    // reliably unblock it when another thread closes the listening socket.
+    if (serverFD >= 0) {
+        int wakeFD = socket(AF_INET, SOCK_STREAM, 0);
+        if (wakeFD >= 0) {
+            struct sockaddr_in address;
+            memset(&address, 0, sizeof(address));
+            address.sin_family = AF_INET;
+            address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            address.sin_port = htons(kLegacyPort);
+            connect(wakeFD, (struct sockaddr *)&address, sizeof(address));
+            close(wakeFD);
+        }
+    }
+}
+
 - (void)setDisplayActive:(BOOL)active {
     int socketFD;
     @synchronized (self) {
@@ -366,25 +427,35 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 }
 
 - (void)runServer {
-    _serverFD = socket(AF_INET, SOCK_STREAM, 0);
-    if (_serverFD < 0) {
+    int serverFD = socket(AF_INET, SOCK_STREAM, 0);
+    if (serverFD < 0) {
         [self setStatus:@"Socket 建立失敗" connected:NO];
         return;
     }
 
+    @synchronized (self) {
+        if (_backgrounded) {
+            close(serverFD);
+            return;
+        }
+        _serverFD = serverFD;
+    }
+
     int yes = 1;
-    setsockopt(_serverFD, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    setsockopt(serverFD, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
     struct sockaddr_in address;
     memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_ANY);
     address.sin_port = htons(kLegacyPort);
 
-    if (bind(_serverFD, (struct sockaddr *)&address, sizeof(address)) != 0 ||
-        listen(_serverFD, 2) != 0) {
+    if (bind(serverFD, (struct sockaddr *)&address, sizeof(address)) != 0 ||
+        listen(serverFD, 2) != 0) {
         [self setStatus:[NSString stringWithFormat:@"無法監聽 %u", kLegacyPort] connected:NO];
-        close(_serverFD);
-        _serverFD = -1;
+        close(serverFD);
+        @synchronized (self) {
+            if (_serverFD == serverFD) _serverFD = -1;
+        }
         return;
     }
 
@@ -392,12 +463,19 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
             connected:NO];
 
     for (;;) {
-        int socketFD = accept(_serverFD, NULL, NULL);
+        @synchronized (self) {
+            if (_backgrounded) break;
+        }
+        int socketFD = accept(serverFD, NULL, NULL);
         if (socketFD < 0) {
             if (errno == EINTR) continue;
             break;
         }
         @synchronized (self) {
+            if (_backgrounded) {
+                close(socketFD);
+                break;
+            }
             _clientFD = socketFD;
         }
         setsockopt(socketFD, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
@@ -418,6 +496,21 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         }
         close(socketFD);
         [self setStatus:@"連線中斷，等待重新連接" connected:NO];
+    }
+
+    close(serverFD);
+    BOOL restart;
+    @synchronized (self) {
+        if (_serverFD == serverFD) _serverFD = -1;
+        restart = LegacyShouldRestartServer(_backgrounded);
+    }
+    if (restart) {
+        dispatch_async(_queue, ^{
+            @synchronized (self) {
+                if (self->_backgrounded || self->_serverFD >= 0) return;
+            }
+            [self runServer];
+        });
     }
 }
 
@@ -1076,6 +1169,12 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         target:self selector:@selector(updateClock) userInfo:nil repeats:YES];
     [self showPage:0];
     [UIApplication sharedApplication].idleTimerDisabled = YES;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(applicationDidBecomeActive:)
+        name:UIApplicationDidBecomeActiveNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(applicationDidEnterBackground:)
+        name:UIApplicationDidEnterBackgroundNotification object:nil];
 }
 
 - (void)buildDashboard {
@@ -1095,7 +1194,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [_dashboardView addSubview:title];
 
     UILabel *version = [[UILabel alloc] initWithFrame:CGRectMake(32, 55, 460, 24)];
-    version.text = @"Mac 即時狀態 · 四合一工作面板 · 0.3.0";
+    version.text = @"Mac 即時狀態 · 四合一工作面板 · 0.3.1";
     version.textColor = [UIColor colorWithWhite:0.55 alpha:1.0];
     version.font = [UIFont systemFontOfSize:13.0];
     [_dashboardView addSubview:version];
@@ -1987,6 +2086,16 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [_receiver setDisplayActive:displayPage];
 }
 
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+    (void)notification;
+    [_receiver resumeAfterBackground];
+}
+
+- (void)applicationDidEnterBackground:(NSNotification *)notification {
+    (void)notification;
+    [_receiver suspendForBackground];
+}
+
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     if (_receiver) return;
@@ -2034,6 +2143,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 }
 
 - (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [_clockTimer invalidate];
     [_photoTimer invalidate];
 }

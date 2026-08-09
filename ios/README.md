@@ -1,4 +1,4 @@
-# QuietPanel iOS 0.3.0
+# QuietPanel iOS 0.3.1
 
 This is a standalone armv7/iOS 9 integration build. It uses its own package,
 bundle, executable, preferences and TCP port, so the verified LegacyPad Display
@@ -38,3 +38,6 @@ THEOS=/absolute/path/to/theos make clean package FINALPACKAGE=1
 
 LegacyPad Display remains an independent app and rollback baseline.
 Weather data is provided by Open-Meteo under CC BY 4.0.
+
+Version 0.3.1 rebuilds the iPad listener after USB loss and explicitly closes
+and resumes it across app background/foreground transitions.
