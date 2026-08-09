@@ -92,6 +92,51 @@ Designer: Yoshimichi Ohira
 Source: https://fonts.google.com/specimen/Zen+Dots
 License: SIL Open Font License 1.1
 
+Font: Michroma
+File: font_michroma.ttf
+Designer: Vernon Adams
+Source: https://github.com/google/fonts/tree/main/ofl/michroma
+License: SIL Open Font License 1.1
+
+Font: Share Tech Mono
+File: font_sharetechmono.ttf
+Designer: Carrois Apostrophe
+Source: https://github.com/google/fonts/tree/main/ofl/sharetechmono
+License: SIL Open Font License 1.1
+
+Font: Righteous
+File: font_righteous.ttf
+Designer: Astigmatic
+Source: https://github.com/google/fonts/tree/main/ofl/righteous
+License: SIL Open Font License 1.1
+
+Font: Bungee
+File: font_bungee.ttf
+Designer: David Jonathan Ross
+Source: https://github.com/google/fonts/tree/main/ofl/bungee
+License: SIL Open Font License 1.1
+
+Font: Space Mono
+File: font_spacemono.ttf
+Designer: Colophon Foundry
+Source: https://github.com/google/fonts/tree/main/ofl/spacemono
+License: SIL Open Font License 1.1
+
+Font: Monoton
+File: font_monoton.ttf
+Designer: Vernon Adams
+Source: https://github.com/google/fonts/tree/main/ofl/monoton
+License: SIL Open Font License 1.1
+
+--------------------------------------------------------------------------------
+[NON-DISTRIBUTABLE PRIVATE FONT / 不公開散布的私人字型]
+Font: Storopia
+File: font_storopia.ttf
+Note: Reused only from the owner's existing Storopia test APK. Its
+      redistribution license has not been verified. This file is git-ignored
+      and must not be published or copied into a public release.
+--------------------------------------------------------------------------------
+
 ================================================================================
 
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007

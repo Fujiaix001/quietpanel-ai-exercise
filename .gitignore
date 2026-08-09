@@ -9,6 +9,7 @@
 /android/app/src/private/
 /ios/.theos/
 /ios/packages/
+/ios/Resources/Fonts/font_storopia.ttf
 /local-backups/
 /dist/
 *.log

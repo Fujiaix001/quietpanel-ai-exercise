@@ -1,8 +1,8 @@
 Package: tw.codex.quietpanel
 Name: QuietPanel iPad
-Version: 0.3.1
+Version: 0.4.0
 Architecture: iphoneos-arm
-Description: QuietPanel dashboard, extended display, selectable photo albums, open-font weather clock and NASA APOD for jailbroken iOS 9.
+Description: QuietPanel dashboard, extended display, movable photo clock, guarded Mac shortcuts, weather and NASA APOD for jailbroken iOS 9.
 Maintainer: Codex
 Author: Codex
 Section: Utilities

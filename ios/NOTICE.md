@@ -9,7 +9,7 @@ renderer, and adds the QuietPanel page container plus display visibility
 control. Its package, bundle, executable, preferences and TCP port are separate
 from LegacyPad Display.
 
-The photo-clock page bundles 13 font files from the Android edition, all under
-the SIL Open Font License 1.1. Names, upstream sources and the full license text
-are installed with the app as `Fonts/LICENSES-PhotoFonts.txt`. The Android
-test-only Storopia font is not included.
+The public photo-clock build bundles 19 fonts under the SIL Open Font License
+1.1. Names, upstream sources and the full license text are installed with the
+app as `Fonts/LICENSES-PhotoFonts.txt`. A local private build may also reuse the
+owner's Storopia test subset; that ignored file must not enter a public release.

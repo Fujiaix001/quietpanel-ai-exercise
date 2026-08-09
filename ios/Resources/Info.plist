@@ -48,9 +48,9 @@
 		</dict>
 	</dict>
 	<key>CFBundleShortVersionString</key>
-	<string>0.3.1</string>
+	<string>0.4.0</string>
 	<key>CFBundleVersion</key>
-	<string>5</string>
+	<string>6</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>MinimumOSVersion</key>
@@ -86,6 +86,13 @@
 		<string>Fonts/font_zendots.ttf</string>
 		<string>Fonts/font_huninn.ttf</string>
 		<string>Fonts/font_iansui.ttf</string>
+		<string>Fonts/font_storopia.ttf</string>
+		<string>Fonts/font_michroma.ttf</string>
+		<string>Fonts/font_sharetechmono.ttf</string>
+		<string>Fonts/font_righteous.ttf</string>
+		<string>Fonts/font_bungee.ttf</string>
+		<string>Fonts/font_spacemono.ttf</string>
+		<string>Fonts/font_monoton.ttf</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
