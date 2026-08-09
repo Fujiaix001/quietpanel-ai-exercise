@@ -49,6 +49,16 @@ static double QuietClampClockScale(double scale) {
     return fmin(2.5, fmax(0.75, scale));
 }
 
+static double QuietRenderingScale(double screenScale, double viewScale) {
+    if (!isfinite(screenScale) || screenScale <= 0) screenScale = 1.0;
+    if (!isfinite(viewScale) || viewScale < 1.0) viewScale = 1.0;
+    return screenScale * viewScale;
+}
+
+static size_t QuietAlbumImportBatchCount(size_t remaining) {
+    return remaining < 10 ? remaining : 10;
+}
+
 typedef enum {
     QuietWeatherClear,
     QuietWeatherCloudy,
@@ -175,6 +185,12 @@ int main(void) {
     assert(QuietClampClockScale(1.4) == 1.4);
     assert(QuietClampClockScale(8.0) == 2.5);
     assert(QuietClampClockScale(NAN) == 1.0);
+    assert(fabs(QuietRenderingScale(1.0, 1.4) - 1.4) < 0.0001);
+    assert(QuietRenderingScale(2.0, 0.75) == 2.0);
+    assert(QuietRenderingScale(NAN, NAN) == 1.0);
+    assert(QuietAlbumImportBatchCount(0) == 0);
+    assert(QuietAlbumImportBatchCount(7) == 7);
+    assert(QuietAlbumImportBatchCount(780) == 10);
     QuietScalarRange strictRange = QuietClockCenterRange(1024, 1000, 0);
     QuietScalarRange overflowRange = QuietClockCenterRange(1024, 1000, 0.2);
     assert(strictRange.minimum == 512 && strictRange.maximum == 512);
@@ -223,6 +239,20 @@ static NSString *const kQuietClockXRatioKey = @"QuietPanel.clockXRatio";
 static NSString *const kQuietClockYRatioKey = @"QuietPanel.clockYRatio";
 static NSString *const kQuietClockPositionKey = @"QuietPanel.clockPositionCustomized";
 static NSString *const kQuietClockPositionRangeKey = @"QuietPanel.clockPositionRange";
+static NSString *const kQuietAlbumImportRoot = @"QuietPanelImports";
+static NSString *const kQuietAlbumImportReady = @".ready";
+static NSString *const kQuietAlbumImportState = @".state.plist";
+
+static void QuietApplyContentsScale(UIView *view, CGFloat contentsScale) {
+    if (fabs(view.layer.contentsScale - contentsScale) > 0.001) {
+        view.contentScaleFactor = contentsScale;
+        view.layer.contentsScale = contentsScale;
+        [view setNeedsDisplay];
+    }
+    for (UIView *subview in view.subviews) {
+        QuietApplyContentsScale(subview, contentsScale);
+    }
+}
 
 static NSArray *QuietFontNames(void) {
     static NSArray *names;
@@ -275,17 +305,6 @@ static BOOL QuietFontUsesEnglishDate(NSInteger index) {
     return index >= 7 && index != 12 && index != 13;
 }
 
-static NSString *QuietWeatherSymbol(int code, BOOL isDay) {
-    switch (QuietWeatherKindForCode(code)) {
-        case QuietWeatherClear: return isDay ? @"☀︎" : @"☾";
-        case QuietWeatherFog: return @"≋";
-        case QuietWeatherRain: return @"☂︎";
-        case QuietWeatherSnow: return @"❄︎";
-        case QuietWeatherThunder: return @"ϟ";
-        case QuietWeatherCloudy: return @"☁︎";
-    }
-}
-
 static BOOL QuietIsSyncedAlbum(PHAssetCollection *collection) {
     PHAssetCollectionSubtype subtype = collection.assetCollectionSubtype;
     return subtype == PHAssetCollectionSubtypeAlbumSyncedAlbum ||
@@ -331,6 +350,173 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 - (AVSampleBufferDisplayLayer *)displayLayer {
     return (AVSampleBufferDisplayLayer *)self.layer;
 }
+@end
+
+@interface QuietWeatherIconView : UIView
+- (void)setWeatherCode:(int)code daytime:(BOOL)daytime;
+@end
+
+@implementation QuietWeatherIconView {
+    int _weatherCode;
+    BOOL _daytime;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.opaque = NO;
+        self.contentMode = UIViewContentModeRedraw;
+        self.isAccessibilityElement = YES;
+        _daytime = YES;
+    }
+    return self;
+}
+
+- (void)setWeatherCode:(int)code daytime:(BOOL)daytime {
+    _weatherCode = code;
+    _daytime = daytime;
+    switch (QuietWeatherKindForCode(code)) {
+        case QuietWeatherClear:
+            self.accessibilityLabel = daytime ? @"晴天" : @"晴朗夜晚";
+            break;
+        case QuietWeatherCloudy: self.accessibilityLabel = @"多雲"; break;
+        case QuietWeatherFog: self.accessibilityLabel = @"有霧"; break;
+        case QuietWeatherRain: self.accessibilityLabel = @"下雨"; break;
+        case QuietWeatherSnow: self.accessibilityLabel = @"下雪"; break;
+        case QuietWeatherThunder: self.accessibilityLabel = @"雷雨"; break;
+    }
+    [self setNeedsDisplay];
+}
+
+- (void)prepareStroke:(CGContextRef)context width:(CGFloat)width color:(UIColor *)color {
+    CGContextSetLineWidth(context, width);
+    CGContextSetLineCap(context, kCGLineCapRound);
+    CGContextSetLineJoin(context, kCGLineJoinRound);
+    CGContextSetStrokeColorWithColor(context, color.CGColor);
+}
+
+- (void)drawClearInContext:(CGContextRef)context {
+    UIColor *color = _daytime
+        ? [UIColor colorWithRed:1.0 green:210.0 / 255.0 blue:75.0 / 255.0 alpha:1.0]
+        : [UIColor colorWithRed:220.0 / 255.0 green:232.0 / 255.0 blue:246.0 / 255.0 alpha:1.0];
+    [self prepareStroke:context width:2.8 color:color];
+    if (_daytime) {
+        CGContextStrokeEllipseInRect(context, CGRectMake(11, 11, 14, 14));
+        for (NSInteger i = 0; i < 8; i++) {
+            CGFloat angle = (CGFloat)M_PI * i / 4.0;
+            CGContextMoveToPoint(context, 18 + cos(angle) * 11, 18 + sin(angle) * 11);
+            CGContextAddLineToPoint(context, 18 + cos(angle) * 14, 18 + sin(angle) * 14);
+        }
+        CGContextStrokePath(context);
+    } else {
+        CGContextBeginPath(context);
+        CGContextMoveToPoint(context, 25, 8);
+        CGContextAddCurveToPoint(context, 13, 10, 11, 25, 22, 30);
+        CGContextAddCurveToPoint(context, 11, 30, 6, 17, 13, 10);
+        CGContextStrokePath(context);
+    }
+}
+
+- (void)drawCloudInContext:(CGContextRef)context {
+    CGContextBeginPath(context);
+    CGContextMoveToPoint(context, 12, 34);
+    CGContextAddCurveToPoint(context, 5, 34, 5, 24, 13, 23);
+    CGContextAddCurveToPoint(context, 16, 14, 29, 14, 33, 23);
+    CGContextAddCurveToPoint(context, 43, 22, 45, 34, 36, 36);
+    CGContextAddLineToPoint(context, 13, 36);
+    CGContextClosePath(context);
+    CGContextSetFillColorWithColor(context,
+        [UIColor colorWithRed:235.0 / 255.0 green:241.0 / 255.0 blue:245.0 / 255.0 alpha:1.0].CGColor);
+    CGContextFillPath(context);
+}
+
+- (void)drawRainInContext:(CGContextRef)context {
+    [self prepareStroke:context width:2.5 color:
+        [UIColor colorWithRed:70.0 / 255.0 green:190.0 / 255.0 blue:225.0 / 255.0 alpha:1.0]];
+    const CGFloat starts[] = {16, 25, 34};
+    for (NSInteger i = 0; i < 3; i++) {
+        CGContextMoveToPoint(context, starts[i], 39);
+        CGContextAddLineToPoint(context, starts[i] - 2, 44);
+    }
+    CGContextStrokePath(context);
+}
+
+- (void)drawSnowInContext:(CGContextRef)context {
+    [self prepareStroke:context width:2.0 color:[UIColor whiteColor]];
+    const CGFloat centers[] = {16, 30};
+    for (NSInteger i = 0; i < 2; i++) {
+        CGContextMoveToPoint(context, centers[i], 40);
+        CGContextAddLineToPoint(context, centers[i], 45);
+        CGContextMoveToPoint(context, centers[i] - 2.5, 42.5);
+        CGContextAddLineToPoint(context, centers[i] + 2.5, 42.5);
+    }
+    CGContextStrokePath(context);
+}
+
+- (void)drawThunderInContext:(CGContextRef)context {
+    CGContextBeginPath(context);
+    CGContextMoveToPoint(context, 25, 37);
+    CGContextAddLineToPoint(context, 19, 45);
+    CGContextAddLineToPoint(context, 25, 44);
+    CGContextAddLineToPoint(context, 22, 48);
+    CGContextAddLineToPoint(context, 33, 40);
+    CGContextAddLineToPoint(context, 27, 41);
+    CGContextClosePath(context);
+    CGContextSetFillColorWithColor(context,
+        [UIColor colorWithRed:1.0 green:210.0 / 255.0 blue:60.0 / 255.0 alpha:1.0].CGColor);
+    CGContextFillPath(context);
+}
+
+- (void)drawFogInContext:(CGContextRef)context {
+    [self prepareStroke:context width:3.0 color:
+        [UIColor colorWithRed:220.0 / 255.0 green:228.0 / 255.0 blue:232.0 / 255.0 alpha:1.0]];
+    const CGFloat lines[][4] = {{8, 18, 38, 18}, {13, 25, 42, 25}, {7, 32, 34, 32}};
+    for (NSInteger i = 0; i < 3; i++) {
+        CGContextMoveToPoint(context, lines[i][0], lines[i][1]);
+        CGContextAddLineToPoint(context, lines[i][2], lines[i][3]);
+    }
+    CGContextStrokePath(context);
+}
+
+- (void)drawRect:(CGRect)rect {
+    CGContextRef context = UIGraphicsGetCurrentContext();
+    CGFloat scale = MIN(rect.size.width, rect.size.height) / 48.0;
+    CGFloat offsetX = (rect.size.width - 48.0 * scale) / 2.0;
+    CGFloat offsetY = (rect.size.height - 48.0 * scale) / 2.0;
+    CGContextSaveGState(context);
+    CGContextTranslateCTM(context, offsetX, offsetY);
+    CGContextScaleCTM(context, scale, scale);
+    CGContextSetShadowWithColor(context, CGSizeMake(0, 1), 1.5,
+        [UIColor colorWithWhite:0 alpha:0.45].CGColor);
+
+    switch (QuietWeatherKindForCode(_weatherCode)) {
+        case QuietWeatherClear:
+            [self drawClearInContext:context];
+            break;
+        case QuietWeatherFog:
+            [self drawFogInContext:context];
+            break;
+        case QuietWeatherRain:
+            [self drawCloudInContext:context];
+            [self drawRainInContext:context];
+            break;
+        case QuietWeatherSnow:
+            [self drawCloudInContext:context];
+            [self drawSnowInContext:context];
+            break;
+        case QuietWeatherThunder:
+            [self drawCloudInContext:context];
+            [self drawThunderInContext:context];
+            break;
+        case QuietWeatherCloudy:
+            [self drawClearInContext:context];
+            [self drawCloudInContext:context];
+            break;
+    }
+    CGContextRestoreGState(context);
+}
+
 @end
 
 @interface LegacyReceiver : NSObject
@@ -1169,6 +1355,14 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 @end
 
 @interface LegacyViewController : UIViewController <UIGestureRecognizerDelegate>
+- (void)startPendingAlbumImports;
+- (void)importNextPendingAlbum;
+- (void)beginAlbumImportAtDirectory:(NSString *)directory;
+- (void)importAlbumBatchAtDirectory:(NSString *)directory
+                              files:(NSArray *)files
+                              album:(PHAssetCollection *)album
+                          nextIndex:(NSUInteger)nextIndex
+                         totalBytes:(unsigned long long)totalBytes;
 @end
 
 @implementation LegacyViewController {
@@ -1181,6 +1375,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     UILabel *_systemDetailLabel;
     UILabel *_clockLabel;
     UILabel *_dateLabel;
+    QuietWeatherIconView *_dashboardWeatherIconView;
     UILabel *_dashboardWeatherLabel;
     UILabel *_cpuValueLabel;
     UILabel *_memoryValueLabel;
@@ -1216,7 +1411,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     UILabel *_photoTimeLabel;
     UILabel *_photoDateLabel;
     UIView *_photoWeatherRow;
-    UILabel *_photoWeatherIconLabel;
+    QuietWeatherIconView *_photoWeatherIconView;
     UILabel *_photoWeatherTemperatureLabel;
     UILabel *_photoWeatherLocationLabel;
     UILabel *_photoDaylightLabel;
@@ -1235,12 +1430,331 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     BOOL _displayConnected;
     NSString *_displayStatus;
     CGSize _displayPixelSize;
+    BOOL _albumImportRunning;
+    NSMutableArray *_albumImportDirectories;
 }
 
 - (BOOL)prefersStatusBarHidden { return YES; }
 - (BOOL)shouldAutorotate { return YES; }
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations {
     return UIInterfaceOrientationMaskLandscape;
+}
+
+- (NSString *)albumImportRootPath {
+    NSString *documents = [NSSearchPathForDirectoriesInDomains(
+        NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    return [documents stringByAppendingPathComponent:kQuietAlbumImportRoot];
+}
+
+- (void)writeAlbumImportState:(NSString *)phase
+                    directory:(NSString *)directory
+               albumIdentifier:(NSString *)albumIdentifier
+                    nextIndex:(NSUInteger)nextIndex
+                 expectedCount:(NSUInteger)expectedCount
+                    totalBytes:(unsigned long long)totalBytes
+                         error:(NSString *)error {
+    NSString *albumName = directory.lastPathComponent ?: @"";
+    NSMutableDictionary *state = [@{
+        @"phase": phase ?: @"error",
+        @"album": albumName,
+        @"album_identifier": albumIdentifier ?: @"",
+        @"imported_count": @(nextIndex),
+        @"expected_count": @(expectedCount),
+        @"total_bytes": @(totalBytes),
+        @"updated_at": @([[NSDate date] timeIntervalSince1970])
+    } mutableCopy];
+    if (error.length > 0) [state setObject:error forKey:@"error"];
+    if (directory.length > 0) {
+        [state writeToFile:[directory stringByAppendingPathComponent:
+            kQuietAlbumImportState] atomically:YES];
+    }
+    [state writeToFile:[[self albumImportRootPath]
+        stringByAppendingPathComponent:@"status.plist"] atomically:YES];
+
+    if ([phase isEqual:@"error"]) {
+        _photoStatusLabel.hidden = NO;
+        _photoStatusLabel.text = [NSString stringWithFormat:@"相簿匯入失敗\n%@",
+            error ?: @"未知錯誤"];
+    } else if ([phase isEqual:@"complete"]) {
+        _photoStatusLabel.hidden = NO;
+        _photoStatusLabel.text = [NSString stringWithFormat:@"%@ 已完成 · %lu 張",
+            albumName, (unsigned long)expectedCount];
+    } else {
+        _photoStatusLabel.hidden = NO;
+        _photoStatusLabel.text = [NSString stringWithFormat:@"正在匯入 %@ · %lu/%lu",
+            albumName, (unsigned long)nextIndex, (unsigned long)expectedCount];
+    }
+}
+
+- (NSArray *)importFilesAtDirectory:(NSString *)directory
+                         totalBytes:(unsigned long long *)totalBytes
+                              error:(NSError **)error {
+    NSFileManager *manager = [NSFileManager defaultManager];
+    NSArray *entries = [manager contentsOfDirectoryAtPath:directory error:error];
+    if (!entries) return nil;
+    NSMutableArray *files = [NSMutableArray array];
+    unsigned long long bytes = 0;
+    for (NSString *name in entries) {
+        if ([name isEqual:kQuietAlbumImportReady] ||
+            [name isEqual:kQuietAlbumImportState]) continue;
+        NSString *path = [directory stringByAppendingPathComponent:name];
+        NSDictionary *attributes = [manager attributesOfItemAtPath:path error:error];
+        if (!attributes) return nil;
+        NSString *extension = name.pathExtension.lowercaseString;
+        BOOL supported = [extension isEqual:@"jpg"] || [extension isEqual:@"jpeg"] ||
+                         [extension isEqual:@"png"];
+        if (![[attributes objectForKey:NSFileType] isEqual:NSFileTypeRegular] || !supported) {
+            if (error) *error = [NSError errorWithDomain:@"QuietPanelAlbumImport"
+                code:1 userInfo:@{NSLocalizedDescriptionKey:
+                    [NSString stringWithFormat:@"不支援的匯入項目：%@", name]}];
+            return nil;
+        }
+        bytes += [[attributes objectForKey:NSFileSize] unsignedLongLongValue];
+        [files addObject:name];
+    }
+    [files sortUsingComparator:^NSComparisonResult(NSString *left, NSString *right) {
+        return [left compare:right options:NSCaseInsensitiveSearch | NSNumericSearch];
+    }];
+    if (files.count == 0) {
+        if (error) *error = [NSError errorWithDomain:@"QuietPanelAlbumImport"
+            code:2 userInfo:@{NSLocalizedDescriptionKey:@"匯入資料夾沒有支援的圖片"}];
+        return nil;
+    }
+    if (totalBytes) *totalBytes = bytes;
+    return files;
+}
+
+- (NSArray *)albumsNamed:(NSString *)name {
+    PHFetchResult *collections = [PHAssetCollection
+        fetchAssetCollectionsWithType:PHAssetCollectionTypeAlbum
+        subtype:PHAssetCollectionSubtypeAny options:nil];
+    NSMutableArray *matches = [NSMutableArray array];
+    [collections enumerateObjectsUsingBlock:^(PHAssetCollection *collection,
+                                               NSUInteger index, BOOL *stop) {
+        (void)index;
+        (void)stop;
+        if ([collection.localizedTitle isEqualToString:name]) [matches addObject:collection];
+    }];
+    return matches;
+}
+
+- (void)failAlbumImportAtDirectory:(NSString *)directory
+                             error:(NSString *)message
+                     expectedCount:(NSUInteger)expectedCount
+                        totalBytes:(unsigned long long)totalBytes {
+    _albumImportRunning = NO;
+    NSDictionary *existing = [NSDictionary dictionaryWithContentsOfFile:
+        [directory stringByAppendingPathComponent:kQuietAlbumImportState]];
+    NSString *albumIdentifier = [existing objectForKey:@"album_identifier"];
+    NSUInteger nextIndex = [[existing objectForKey:@"imported_count"] unsignedIntegerValue];
+    if (expectedCount == 0) {
+        expectedCount = [[existing objectForKey:@"expected_count"] unsignedIntegerValue];
+    }
+    if (totalBytes == 0) {
+        totalBytes = [[existing objectForKey:@"total_bytes"] unsignedLongLongValue];
+    }
+    [self writeAlbumImportState:@"error" directory:directory
+        albumIdentifier:albumIdentifier nextIndex:nextIndex
+        expectedCount:expectedCount totalBytes:totalBytes error:message];
+}
+
+- (void)startPendingAlbumImports {
+    if (_albumImportRunning) return;
+    NSFileManager *manager = [NSFileManager defaultManager];
+    NSString *root = [self albumImportRootPath];
+    NSArray *entries = [manager contentsOfDirectoryAtPath:root error:nil];
+    NSMutableArray *pending = [NSMutableArray array];
+    for (NSString *name in entries) {
+        if ([name hasPrefix:@"."] || [name isEqual:@"status.plist"]) continue;
+        NSString *directory = [root stringByAppendingPathComponent:name];
+        BOOL isDirectory = NO;
+        if (![manager fileExistsAtPath:directory isDirectory:&isDirectory] || !isDirectory ||
+            ![manager fileExistsAtPath:[directory stringByAppendingPathComponent:
+                kQuietAlbumImportReady]]) continue;
+        NSDictionary *state = [NSDictionary dictionaryWithContentsOfFile:
+            [directory stringByAppendingPathComponent:kQuietAlbumImportState]];
+        if ([[state objectForKey:@"phase"] isEqual:@"complete"]) continue;
+        [pending addObject:directory];
+    }
+    [pending sortUsingComparator:^NSComparisonResult(NSString *left, NSString *right) {
+        return [left.lastPathComponent compare:right.lastPathComponent];
+    }];
+    if (pending.count == 0) return;
+
+    PHAuthorizationStatus authorization = [PHPhotoLibrary authorizationStatus];
+    if (authorization == PHAuthorizationStatusNotDetermined) {
+        _albumImportRunning = YES;
+        __weak LegacyViewController *weakSelf = self;
+        [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus result) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                LegacyViewController *strongSelf = weakSelf;
+                if (!strongSelf) return;
+                strongSelf->_albumImportRunning = NO;
+                if (result == PHAuthorizationStatusAuthorized) {
+                    [strongSelf startPendingAlbumImports];
+                } else {
+                    [strongSelf failAlbumImportAtDirectory:[pending firstObject]
+                        error:@"QuietPanel 沒有照片權限" expectedCount:0 totalBytes:0];
+                }
+            });
+        }];
+        return;
+    }
+    if (authorization != PHAuthorizationStatusAuthorized) {
+        [self failAlbumImportAtDirectory:[pending firstObject]
+            error:@"QuietPanel 沒有照片權限" expectedCount:0 totalBytes:0];
+        return;
+    }
+    _albumImportDirectories = pending;
+    _albumImportRunning = YES;
+    [self importNextPendingAlbum];
+}
+
+- (void)importNextPendingAlbum {
+    if (_albumImportDirectories.count == 0) {
+        _albumImportRunning = NO;
+        _photoAssets = nil;
+        if (_currentPage == 2 || _currentPage == 3) [self loadPhotoCatalog];
+        return;
+    }
+    [self beginAlbumImportAtDirectory:[_albumImportDirectories firstObject]];
+}
+
+- (void)beginAlbumImportAtDirectory:(NSString *)directory {
+    NSError *fileError = nil;
+    unsigned long long totalBytes = 0;
+    NSArray *files = [self importFilesAtDirectory:directory totalBytes:&totalBytes
+        error:&fileError];
+    if (!files) {
+        [self failAlbumImportAtDirectory:directory error:fileError.localizedDescription
+            expectedCount:0 totalBytes:totalBytes];
+        return;
+    }
+    NSString *name = directory.lastPathComponent;
+    NSString *statePath = [directory stringByAppendingPathComponent:kQuietAlbumImportState];
+    NSDictionary *state = [NSDictionary dictionaryWithContentsOfFile:statePath];
+    NSUInteger stateExpectedCount = [[state objectForKey:@"expected_count"] unsignedIntegerValue];
+    if (stateExpectedCount > 0 && (stateExpectedCount != files.count ||
+                  [[state objectForKey:@"total_bytes"] unsignedLongLongValue] != totalBytes)) {
+        [self failAlbumImportAtDirectory:directory
+            error:@"暫存圖片與先前匯入狀態不一致，已停止以避免漏圖或重複"
+            expectedCount:files.count totalBytes:totalBytes];
+        return;
+    }
+
+    NSString *albumIdentifier = [state objectForKey:@"album_identifier"];
+    PHAssetCollection *album = nil;
+    if (albumIdentifier.length > 0) {
+        PHFetchResult *result = [PHAssetCollection
+            fetchAssetCollectionsWithLocalIdentifiers:@[albumIdentifier] options:nil];
+        if (result.count == 1) album = [result objectAtIndex:0];
+        if (!album || ![album.localizedTitle isEqualToString:name]) {
+            [self failAlbumImportAtDirectory:directory
+                error:@"匯入用相簿已被移除或改名，已停止以避免重複"
+                expectedCount:files.count totalBytes:totalBytes];
+            return;
+        }
+    } else {
+        NSArray *matches = [self albumsNamed:name];
+        if (matches.count > 1) {
+            [self failAlbumImportAtDirectory:directory
+                error:@"照片中已有多個同名相簿，無法安全判定目標"
+                expectedCount:files.count totalBytes:totalBytes];
+            return;
+        }
+        if (matches.count == 1) {
+            album = [matches firstObject];
+            NSUInteger existingCount = [PHAsset fetchAssetsInAssetCollection:album
+                options:nil].count;
+            if (existingCount > 0) {
+                [self failAlbumImportAtDirectory:directory
+                    error:@"照片中已有非空白同名相簿，已停止以避免混入或重複"
+                    expectedCount:files.count totalBytes:totalBytes];
+                return;
+            }
+            albumIdentifier = album.localIdentifier;
+        } else {
+            __block NSString *createdIdentifier = nil;
+            __weak LegacyViewController *weakSelf = self;
+            [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+                PHAssetCollectionChangeRequest *request = [PHAssetCollectionChangeRequest
+                    creationRequestForAssetCollectionWithTitle:name];
+                createdIdentifier = [request.placeholderForCreatedAssetCollection.localIdentifier copy];
+            } completionHandler:^(BOOL success, NSError *error) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    LegacyViewController *strongSelf = weakSelf;
+                    if (!strongSelf) return;
+                    if (!success || createdIdentifier.length == 0) {
+                        [strongSelf failAlbumImportAtDirectory:directory
+                            error:error.localizedDescription ?: @"無法建立相簿"
+                            expectedCount:files.count totalBytes:totalBytes];
+                        return;
+                    }
+                    [strongSelf writeAlbumImportState:@"importing" directory:directory
+                        albumIdentifier:createdIdentifier nextIndex:0
+                        expectedCount:files.count totalBytes:totalBytes error:nil];
+                    [strongSelf beginAlbumImportAtDirectory:directory];
+                });
+            }];
+            return;
+        }
+    }
+
+    NSUInteger albumCount = [PHAsset fetchAssetsInAssetCollection:album options:nil].count;
+    if (albumCount > files.count) {
+        [self failAlbumImportAtDirectory:directory
+            error:@"相簿照片數超過來源檔案數，已停止以避免錯誤"
+            expectedCount:files.count totalBytes:totalBytes];
+        return;
+    }
+    [self writeAlbumImportState:albumCount == files.count ? @"complete" : @"importing"
+        directory:directory albumIdentifier:album.localIdentifier nextIndex:albumCount
+        expectedCount:files.count totalBytes:totalBytes error:nil];
+    if (albumCount == files.count) {
+        [_albumImportDirectories removeObjectAtIndex:0];
+        [self importNextPendingAlbum];
+        return;
+    }
+    [self importAlbumBatchAtDirectory:directory files:files album:album
+        nextIndex:albumCount totalBytes:totalBytes];
+}
+
+- (void)importAlbumBatchAtDirectory:(NSString *)directory
+                              files:(NSArray *)files
+                              album:(PHAssetCollection *)album
+                          nextIndex:(NSUInteger)nextIndex
+                         totalBytes:(unsigned long long)totalBytes {
+    NSUInteger batchCount = QuietAlbumImportBatchCount(files.count - nextIndex);
+    NSArray *batch = [files subarrayWithRange:NSMakeRange(nextIndex, batchCount)];
+    __weak LegacyViewController *weakSelf = self;
+    [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+        NSMutableArray *placeholders = [NSMutableArray arrayWithCapacity:batch.count];
+        for (NSString *filename in batch) {
+            PHAssetCreationRequest *request = [PHAssetCreationRequest creationRequestForAsset];
+            PHAssetResourceCreationOptions *options = [[PHAssetResourceCreationOptions alloc] init];
+            options.originalFilename = filename;
+            options.shouldMoveFile = NO;
+            NSURL *url = [NSURL fileURLWithPath:
+                [directory stringByAppendingPathComponent:filename]];
+            [request addResourceWithType:PHAssetResourceTypePhoto fileURL:url options:options];
+            [placeholders addObject:request.placeholderForCreatedAsset];
+        }
+        PHAssetCollectionChangeRequest *albumRequest = [PHAssetCollectionChangeRequest
+            changeRequestForAssetCollection:album];
+        [albumRequest addAssets:placeholders];
+    } completionHandler:^(BOOL success, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            LegacyViewController *strongSelf = weakSelf;
+            if (!strongSelf) return;
+            if (!success) {
+                [strongSelf failAlbumImportAtDirectory:directory
+                    error:error.localizedDescription ?: @"照片批次寫入失敗"
+                    expectedCount:files.count totalBytes:totalBytes];
+                return;
+            }
+            [strongSelf beginAlbumImportAtDirectory:directory];
+        });
+    }];
 }
 
 - (void)viewDidLoad {
@@ -1333,6 +1847,8 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [[NSNotificationCenter defaultCenter] addObserver:self
         selector:@selector(applicationDidEnterBackground:)
         name:UIApplicationDidEnterBackgroundNotification object:nil];
+    [self performSelector:@selector(startPendingAlbumImports)
+               withObject:nil afterDelay:1.0];
 }
 
 - (void)buildDashboard {
@@ -1373,8 +1889,14 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _dateLabel.font = [UIFont systemFontOfSize:14.0];
     [_dashboardView addSubview:_dateLabel];
 
+    _dashboardWeatherIconView = [[QuietWeatherIconView alloc]
+        initWithFrame:CGRectMake(self.view.bounds.size.width - 164, 78, 20, 20)];
+    _dashboardWeatherIconView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+    _dashboardWeatherIconView.hidden = YES;
+    [_dashboardView addSubview:_dashboardWeatherIconView];
+
     _dashboardWeatherLabel = [[UILabel alloc] initWithFrame:CGRectMake(
-        self.view.bounds.size.width - 540, 80, 508, 18)];
+        self.view.bounds.size.width - 140, 80, 108, 18)];
     _dashboardWeatherLabel.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
     _dashboardWeatherLabel.textAlignment = NSTextAlignmentRight;
     _dashboardWeatherLabel.textColor = [UIColor colorWithRed:0.35 green:0.85 blue:1.0 alpha:1.0];
@@ -1528,13 +2050,9 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [_photoClockPanel addSubview:_photoDateLabel];
 
     _photoWeatherRow = [[UIView alloc] initWithFrame:CGRectMake(18, 132, 384, 46)];
-    _photoWeatherIconLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 48, 44)];
-    _photoWeatherIconLabel.font = [UIFont systemFontOfSize:34.0];
-    _photoWeatherIconLabel.textColor = [UIColor colorWithRed:0.35 green:0.85 blue:1.0 alpha:1.0];
-    _photoWeatherIconLabel.textAlignment = NSTextAlignmentCenter;
-    _photoWeatherIconLabel.shadowColor = [UIColor blackColor];
-    _photoWeatherIconLabel.shadowOffset = CGSizeMake(0, 1);
-    [_photoWeatherRow addSubview:_photoWeatherIconLabel];
+    _photoWeatherIconView = [[QuietWeatherIconView alloc]
+        initWithFrame:CGRectMake(0, 0, 44, 44)];
+    [_photoWeatherRow addSubview:_photoWeatherIconView];
 
     _photoWeatherTemperatureLabel = [[UILabel alloc] initWithFrame:CGRectMake(52, 0, 102, 44)];
     _photoWeatherTemperatureLabel.textColor = [UIColor whiteColor];
@@ -1740,10 +2258,9 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _photoWeatherLocationLabel.textAlignment = NSTextAlignmentLeft;
     _photoWeatherLocationLabel.numberOfLines = 1;
 
-    CGSize iconSize = [_photoWeatherIconLabel sizeThatFits:CGSizeMake(44, 44)];
     CGSize temperatureSize = [_photoWeatherTemperatureLabel
         sizeThatFits:CGSizeMake(116, 44)];
-    CGFloat iconWidth = MIN(42.0, MAX(30.0, ceil(iconSize.width) + 2.0));
+    CGFloat iconWidth = 44.0;
     CGFloat temperatureWidth = MIN(116.0,
         MAX(72.0, ceil(temperatureSize.width) + 4.0));
     CGFloat locationWidth = 0.0;
@@ -1760,7 +2277,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         (locationWidth > 0.0 ? 10.0 + locationWidth : 0.0);
     CGFloat iconX = MAX(0.0, 384.0 - contentWidth);
     CGFloat temperatureX = iconX + iconWidth + 8.0;
-    _photoWeatherIconLabel.frame = CGRectMake(iconX, 0, iconWidth, 44);
+    _photoWeatherIconView.frame = CGRectMake(iconX, 0, iconWidth, 44);
     _photoWeatherTemperatureLabel.frame = CGRectMake(
         temperatureX, 0, temperatureWidth, 44);
     _photoWeatherLocationLabel.frame = CGRectMake(
@@ -1776,6 +2293,12 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _photoClockScale = MIN(_photoClockScale, MAX(0.75, fittedMaximum));
     _photoClockPanel.transform = CGAffineTransformMakeScale(
         _photoClockScale, _photoClockScale);
+}
+
+- (void)refreshPhotoClockRenderingScale {
+    CGFloat contentsScale = (CGFloat)QuietRenderingScale(
+        [UIScreen mainScreen].scale, _photoClockScale);
+    QuietApplyContentsScale(_photoClockPanel, contentsScale);
 }
 
 - (CGRect)photoClockCenterRangeAllowingOverflow:(BOOL)allowOverflow {
@@ -1796,6 +2319,9 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     CGPoint center = _photoClockPanel.center;
     center.x = MIN(CGRectGetMaxX(range), MAX(CGRectGetMinX(range), center.x));
     center.y = MIN(CGRectGetMaxY(range), MAX(CGRectGetMinY(range), center.y));
+    CGFloat screenScale = MAX(1.0, [UIScreen mainScreen].scale);
+    center.x = round(center.x * screenScale) / screenScale;
+    center.y = round(center.y * screenScale) / screenScale;
     _photoClockPanel.center = center;
 }
 
@@ -1846,6 +2372,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         ? [defaults doubleForKey:kQuietClockScaleKey] : 1.0;
     [self applyPhotoClockScale:scale];
     [self restorePhotoClockPosition];
+    [self refreshPhotoClockRenderingScale];
 }
 
 - (void)resetPhotoClockLayout {
@@ -1919,6 +2446,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
         [self constrainPhotoClock];
     } else if (gesture.state == UIGestureRecognizerStateEnded ||
                gesture.state == UIGestureRecognizerStateCancelled) {
+        [self refreshPhotoClockRenderingScale];
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         [defaults setDouble:_photoClockScale forKey:kQuietClockScaleKey];
         [defaults synchronize];
@@ -2262,6 +2790,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _photoWeatherRow.hidden = YES;
     _photoDaylightLabel.hidden = YES;
     _photoDaylightProgress.hidden = YES;
+    _dashboardWeatherIconView.hidden = YES;
     _dashboardWeatherLabel.hidden = YES;
     [self layoutPhotoClockContent];
 }
@@ -2298,21 +2827,29 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
     BOOL isDay = ![weather objectForKey:@"is_day"] ||
                  [[weather objectForKey:@"is_day"] boolValue];
-    NSString *symbol = QuietWeatherSymbol(codeValue, isDay);
     NSString *temperatureText = [NSString stringWithFormat:@"%.0f°C", temperatureValue];
     NSString *location = [weather objectForKey:@"location"];
     if (![location isKindOfClass:[NSString class]]) location = @"";
     BOOL showLocation = [self quietBoolForKey:kQuietWeatherLocationKey defaultValue:NO];
 
-    _photoWeatherIconLabel.text = symbol;
+    [_photoWeatherIconView setWeatherCode:codeValue daytime:isDay];
     _photoWeatherTemperatureLabel.text = temperatureText;
     _photoWeatherLocationLabel.text = showLocation ? location : @"";
     _photoWeatherLocationLabel.hidden = !showLocation;
     _photoWeatherRow.hidden = NO;
     [self layoutPhotoClockContent];
+    [_dashboardWeatherIconView setWeatherCode:codeValue daytime:isDay];
     _dashboardWeatherLabel.text = showLocation && location.length > 0
-        ? [NSString stringWithFormat:@"%@  %@  %@", symbol, temperatureText, location]
-        : [NSString stringWithFormat:@"%@  %@", symbol, temperatureText];
+        ? [NSString stringWithFormat:@"%@  %@", temperatureText, location]
+        : temperatureText;
+    CGFloat dashboardTextWidth = MIN(480.0, MAX(44.0,
+        ceil([_dashboardWeatherLabel sizeThatFits:CGSizeMake(480, 18)].width)));
+    CGFloat dashboardRight = self.view.bounds.size.width - 32.0;
+    _dashboardWeatherLabel.frame = CGRectMake(
+        dashboardRight - dashboardTextWidth, 80, dashboardTextWidth, 18);
+    _dashboardWeatherIconView.frame = CGRectMake(
+        dashboardRight - dashboardTextWidth - 24.0, 78, 20, 20);
+    _dashboardWeatherIconView.hidden = NO;
     _dashboardWeatherLabel.hidden = NO;
 
     NSNumber *sunrise = [weather objectForKey:@"sunrise_at_ms"];
