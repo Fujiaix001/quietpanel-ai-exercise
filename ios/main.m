@@ -218,7 +218,6 @@ static NSString *const kQuietWeatherLocationKey = @"QuietPanel.weatherLocation";
 static NSString *const kQuietWeatherDaylightKey = @"QuietPanel.weatherDaylight";
 static NSString *const kQuietWeatherCacheKey = @"QuietPanel.weatherCache";
 static NSString *const kQuietClockBackgroundKey = @"QuietPanel.clockBackground";
-static NSString *const kQuietClockLayoutKey = @"QuietPanel.clockLayout";
 static NSString *const kQuietClockScaleKey = @"QuietPanel.clockScale";
 static NSString *const kQuietClockXRatioKey = @"QuietPanel.clockXRatio";
 static NSString *const kQuietClockYRatioKey = @"QuietPanel.clockYRatio";
@@ -1724,50 +1723,42 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     return [defaults objectForKey:key] ? [defaults boolForKey:key] : defaultValue;
 }
 
-- (NSInteger)photoClockLayoutStyle {
-    return [[NSUserDefaults standardUserDefaults] integerForKey:kQuietClockLayoutKey] == 1
-        ? 1 : 0;
-}
-
 - (void)layoutPhotoClockContent {
     if (!_photoClockPanel) return;
     _photoDaylightLabel.frame = CGRectMake(170, 181, 232, 22);
     _photoDaylightProgress.frame = CGRectMake(170, 211, 232, 3);
-    BOOL split = [self photoClockLayoutStyle] == 1 && !_photoWeatherRow.hidden;
-    if (split) {
-        _photoTimeLabel.frame = CGRectMake(152, -2, 250, 98);
-        _photoDateLabel.frame = CGRectMake(152, 94, 250, 36);
-        _photoWeatherRow.frame = CGRectMake(18, 28, 132, 106);
-        _photoWeatherLocationLabel.textAlignment = NSTextAlignmentLeft;
-        _photoWeatherLocationLabel.numberOfLines = 2;
+    _photoTimeLabel.frame = CGRectMake(18, 0, 384, 96);
+    _photoDateLabel.frame = CGRectMake(18, 92, 384, 38);
+    _photoWeatherRow.frame = CGRectMake(18, 132, 384, 46);
+    _photoWeatherLocationLabel.textAlignment = NSTextAlignmentLeft;
+    _photoWeatherLocationLabel.numberOfLines = 1;
 
-        CGSize iconSize = [_photoWeatherIconLabel sizeThatFits:CGSizeMake(44, 48)];
-        CGFloat iconWidth = MIN(42.0, MAX(30.0, ceil(iconSize.width) + 2.0));
-        _photoWeatherIconLabel.frame = CGRectMake(0, 0, iconWidth, 48);
-        _photoWeatherTemperatureLabel.frame = CGRectMake(
-            iconWidth + 4.0, 0, 132.0 - iconWidth - 4.0, 48);
-        _photoWeatherLocationLabel.frame = CGRectMake(0, 50, 132, 48);
-    } else {
-        _photoTimeLabel.frame = CGRectMake(18, 0, 384, 96);
-        _photoDateLabel.frame = CGRectMake(18, 92, 384, 38);
-        _photoWeatherRow.frame = CGRectMake(18, 132, 384, 46);
-        _photoWeatherLocationLabel.textAlignment = NSTextAlignmentRight;
-        _photoWeatherLocationLabel.numberOfLines = 1;
-
-        CGSize iconSize = [_photoWeatherIconLabel sizeThatFits:CGSizeMake(44, 44)];
-        CGSize temperatureSize = [_photoWeatherTemperatureLabel
-            sizeThatFits:CGSizeMake(116, 44)];
-        CGFloat iconWidth = MIN(42.0, MAX(30.0, ceil(iconSize.width) + 2.0));
-        CGFloat temperatureWidth = MIN(116.0,
-            MAX(72.0, ceil(temperatureSize.width) + 4.0));
-        CGFloat temperatureX = 384.0 - temperatureWidth;
-        CGFloat iconX = temperatureX - iconWidth - 4.0;
-        _photoWeatherIconLabel.frame = CGRectMake(iconX, 0, iconWidth, 44);
-        _photoWeatherTemperatureLabel.frame = CGRectMake(
-            temperatureX, 0, temperatureWidth, 44);
-        _photoWeatherLocationLabel.frame = CGRectMake(
-            0, 2, MAX(0.0, iconX - 10.0), 40);
+    CGSize iconSize = [_photoWeatherIconLabel sizeThatFits:CGSizeMake(44, 44)];
+    CGSize temperatureSize = [_photoWeatherTemperatureLabel
+        sizeThatFits:CGSizeMake(116, 44)];
+    CGFloat iconWidth = MIN(42.0, MAX(30.0, ceil(iconSize.width) + 2.0));
+    CGFloat temperatureWidth = MIN(116.0,
+        MAX(72.0, ceil(temperatureSize.width) + 4.0));
+    CGFloat locationWidth = 0.0;
+    BOOL showLocation = !_photoWeatherLocationLabel.hidden &&
+        _photoWeatherLocationLabel.text.length > 0;
+    if (showLocation) {
+        CGSize locationSize = [_photoWeatherLocationLabel
+            sizeThatFits:CGSizeMake(220.0, 34.0)];
+        locationWidth = MIN(220.0, MAX(24.0, ceil(locationSize.width) + 2.0));
+        locationWidth = MIN(locationWidth,
+            MAX(0.0, 384.0 - iconWidth - temperatureWidth - 18.0));
     }
+    CGFloat contentWidth = iconWidth + 8.0 + temperatureWidth +
+        (locationWidth > 0.0 ? 10.0 + locationWidth : 0.0);
+    CGFloat iconX = MAX(0.0, 384.0 - contentWidth);
+    CGFloat temperatureX = iconX + iconWidth + 8.0;
+    _photoWeatherIconLabel.frame = CGRectMake(iconX, 0, iconWidth, 44);
+    _photoWeatherTemperatureLabel.frame = CGRectMake(
+        temperatureX, 0, temperatureWidth, 44);
+    _photoWeatherLocationLabel.frame = CGRectMake(
+        temperatureX + temperatureWidth + 10.0, 10.0,
+        locationWidth, 34.0);
 }
 
 - (void)applyPhotoClockScale:(CGFloat)requestedScale {
@@ -2056,21 +2047,11 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     BOOL weather = [self quietBoolForKey:kQuietWeatherEnabledKey defaultValue:YES];
     BOOL location = [self quietBoolForKey:kQuietWeatherLocationKey defaultValue:NO];
     BOOL daylight = [self quietBoolForKey:kQuietWeatherDaylightKey defaultValue:YES];
-    NSInteger layoutStyle = [self photoClockLayoutStyle];
     [menu addAction:[UIAlertAction actionWithTitle:
         [NSString stringWithFormat:@"%@ 半透明底板", background ? @"✓" : @"○"]
         style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
             (void)action;
             [self togglePhotoPreferenceKey:kQuietClockBackgroundKey defaultValue:YES];
-        }]];
-    [menu addAction:[UIAlertAction actionWithTitle:
-        layoutStyle == 0 ? @"切換版面：左右資訊卡" : @"切換版面：緊湊右對齊"
-        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            (void)action;
-            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-            [defaults setInteger:layoutStyle == 0 ? 1 : 0 forKey:kQuietClockLayoutKey];
-            [defaults synchronize];
-            [self applyPhotoClockSettings];
         }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"重設時鐘位置與大小"
         style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {

@@ -36,7 +36,10 @@ printf '%s\n' "$page_transition" | grep -q '@synchronized (self)'
 printf '%s\n' "$page_transition" | grep -q '@"page": @(page)'
 echo 'page transition queue: ok'
 
-grep -q 'kQuietClockLayoutKey' "$repo_dir/main.m"
+if grep -q 'kQuietClockLayoutKey\|photoClockLayoutStyle\|切換版面' "$repo_dir/main.m"; then
+  echo 'alternate photo-clock layout still present' >&2
+  exit 1
+fi
 grep -q 'systemFontOfSize:16.0 weight:UIFontWeightSemibold' "$repo_dir/main.m"
 grep -q 'updateClockTimerForCurrentPage' "$repo_dir/main.m"
 grep -q 'targetSize:targetSize' "$repo_dir/main.m"
