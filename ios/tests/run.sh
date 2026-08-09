@@ -43,6 +43,8 @@ fi
 grep -q 'systemFontOfSize:16.0 weight:UIFontWeightSemibold' "$repo_dir/main.m"
 grep -q 'updateClockTimerForCurrentPage' "$repo_dir/main.m"
 grep -q 'targetSize:targetSize' "$repo_dir/main.m"
+grep -q 'CGRectMake(193, 211, 209, 3)' "$repo_dir/main.m"
+grep -q 'self.view.bounds.size.width - 452, 22, 420, 220' "$repo_dir/main.m"
 grep -q '_photoClockDrag.minimumPressDuration = 0.35' "$repo_dir/main.m"
 grep -q 'requireGestureRecognizerToFail:_photoClockDrag' "$repo_dir/main.m"
 grep -q 'sendTouchPhase:@"began"' "$repo_dir/main.m"

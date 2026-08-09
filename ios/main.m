@@ -1478,7 +1478,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     [_photoView addSubview:_photoSettingsButton];
 
     _photoClockPanel = [[UIView alloc] initWithFrame:CGRectMake(
-        self.view.bounds.size.width - 452, 22, 420, 238)];
+        self.view.bounds.size.width - 452, 22, 420, 220)];
     _photoClockPanel.backgroundColor = [UIColor colorWithWhite:0 alpha:0.42];
     _photoClockPanel.layer.cornerRadius = 14.0;
     [_photoView addSubview:_photoClockPanel];
@@ -1550,7 +1550,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
     _photoWeatherRow.hidden = YES;
     [_photoClockPanel addSubview:_photoWeatherRow];
 
-    _photoDaylightLabel = [[UILabel alloc] initWithFrame:CGRectMake(170, 181, 232, 22)];
+    _photoDaylightLabel = [[UILabel alloc] initWithFrame:CGRectMake(193, 181, 209, 22)];
     _photoDaylightLabel.textColor = [UIColor colorWithWhite:0.84 alpha:1.0];
     _photoDaylightLabel.font = [UIFont systemFontOfSize:12.0];
     _photoDaylightLabel.textAlignment = NSTextAlignmentRight;
@@ -1559,7 +1559,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
     _photoDaylightProgress = [[UIProgressView alloc] initWithProgressViewStyle:
         UIProgressViewStyleDefault];
-    _photoDaylightProgress.frame = CGRectMake(170, 211, 232, 3);
+    _photoDaylightProgress.frame = CGRectMake(193, 211, 209, 3);
     _photoDaylightProgress.progressTintColor = [UIColor colorWithRed:1.0 green:0.75 blue:0.2 alpha:1.0];
     _photoDaylightProgress.trackTintColor = [UIColor colorWithWhite:1.0 alpha:0.18];
     _photoDaylightProgress.hidden = YES;
@@ -1725,8 +1725,8 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
 - (void)layoutPhotoClockContent {
     if (!_photoClockPanel) return;
-    _photoDaylightLabel.frame = CGRectMake(170, 181, 232, 22);
-    _photoDaylightProgress.frame = CGRectMake(170, 211, 232, 3);
+    _photoDaylightLabel.frame = CGRectMake(193, 181, 209, 22);
+    _photoDaylightProgress.frame = CGRectMake(193, 211, 209, 3);
     _photoTimeLabel.frame = CGRectMake(18, 0, 384, 96);
     _photoDateLabel.frame = CGRectMake(18, 92, 384, 38);
     _photoWeatherRow.frame = CGRectMake(18, 132, 384, 46);
@@ -1763,7 +1763,7 @@ static BOOL LegacyWriteFully(int socketFD, const void *buffer, size_t length) {
 
 - (void)applyPhotoClockScale:(CGFloat)requestedScale {
     CGFloat widthFit = (self.view.bounds.size.width - 24.0) / 420.0;
-    CGFloat heightFit = (self.view.bounds.size.height - 24.0) / 238.0;
+    CGFloat heightFit = (self.view.bounds.size.height - 24.0) / 220.0;
     CGFloat fittedMaximum = MIN(2.5, MIN(widthFit, heightFit));
     _photoClockScale = (CGFloat)QuietClampClockScale(requestedScale);
     _photoClockScale = MIN(_photoClockScale, MAX(0.75, fittedMaximum));
