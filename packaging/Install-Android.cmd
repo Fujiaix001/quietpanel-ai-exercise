@@ -1,9 +1,8 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set "APK="
-for %%F in (QuietPanel-v*.apk) do set "APK=%%F"
-if not defined APK (
+set "APK=QuietPanel.apk"
+if not exist "%APK%" (
   echo QuietPanel APK not found.
   pause
   exit /b 1

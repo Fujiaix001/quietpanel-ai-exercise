@@ -272,7 +272,7 @@ dependencies = [
 
 [[package]]
 name = "quietpanel-bridge"
-version = "9.0.13"
+version = "42.0.5-redmi42"
 dependencies = [
  "serde",
  "serde_json",

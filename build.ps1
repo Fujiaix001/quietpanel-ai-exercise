@@ -11,6 +11,13 @@ function Copy-IfDifferent {
         [Parameter(Mandatory = $true)][string]$Destination
     )
 
+    if (Test-Path -LiteralPath $Destination) {
+        $sourceHash = Get-Sha256Hex -Path $Source
+        $destinationHash = Get-Sha256Hex -Path $Destination
+        if ($sourceHash -eq $destinationHash) {
+            return
+        }
+    }
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
 }
 
@@ -60,8 +67,8 @@ try {
 # 2. Android App Build
 Push-Location (Join-Path $projectRoot 'android')
 try {
-    Write-Output "Building Android APK v$version..."
-    & .\gradlew.bat :app:assembleRelease --no-daemon
+    Write-Output "Building private Android APK v$version..."
+    & .\gradlew.bat :app:assemblePrivateRelease --no-daemon
     if ($LASTEXITCODE -ne 0) { throw 'Android build failed' }
 } finally {
     Pop-Location
@@ -71,9 +78,23 @@ try {
 Copy-IfDifferent `
     -Source (Join-Path $dist "QuietPanelBridge-v$version-ADB.exe") `
     -Destination (Join-Path $dist 'QuietPanelBridge.exe')
+Copy-IfDifferent `
+    -Source (Join-Path $dist "QuietPanelBridge-v$version-Wireless.exe") `
+    -Destination (Join-Path $dist 'QuietPanelBridge-Wireless.exe')
 
-$builtApk = Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk'
-Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist "QuietPanel-v$version.apk") -Force
+$privateApk = Join-Path $projectRoot `
+    'android\app\build\outputs\apk\private\release\app-private-release.apk'
+if (-not (Test-Path -LiteralPath $privateApk)) {
+    throw "Private Android APK not found: $privateApk"
+}
+Copy-IfDifferent `
+    -Source $privateApk `
+    -Destination (Join-Path $dist "QuietPanel-v$version-Private-Storopia.apk")
+# Stable install name. Install-Android.cmd uses only this file so an older
+# versioned APK in dist can never be selected accidentally.
+Copy-IfDifferent `
+    -Source $privateApk `
+    -Destination (Join-Path $dist 'QuietPanel.apk')
 
 # 4. ADB Tools
 $adbPath = $env:QUIETPANEL_ADB
@@ -96,6 +117,7 @@ if (Test-Path -LiteralPath $adbPath) {
 # 5. Copy launch and PAN setup scripts
 foreach ($file in @(
     'Install-Android.cmd',
+    'Start-QuietPanel.cmd',
     'Start-QuietPanel-ADB.cmd',
     'Start-QuietPanel-Wireless.cmd'
 )) {

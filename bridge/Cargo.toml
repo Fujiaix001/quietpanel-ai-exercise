@@ -1,6 +1,6 @@
 [package]
 name = "quietpanel-bridge"
-version = "9.0.13"
+version = "42.0.5-redmi42"
 edition = "2021"
 
 [[bin]]
@@ -23,6 +23,7 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_Shutdown",
     "Win32_System_LibraryLoader",
     "Win32_System_Power",
+    "Win32_System_Threading",
     "Win32_System_SystemServices",
     "Win32_Graphics_Gdi",
     "Win32_Networking_WinSock",

@@ -11,6 +11,7 @@ mod metrics;
 mod pan;
 mod protocol;
 mod settings;
+mod single_instance;
 mod tray;
 mod weather;
 
@@ -29,6 +30,15 @@ const STATE_INTERVAL: Duration = Duration::from_secs(1);
 const PING_INTERVAL: Duration = Duration::from_secs(5);
 
 fn main() {
+    let _instance_guard = match single_instance::acquire() {
+        Ok(Some(guard)) => guard,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("Unable to create the QuietPanel Bridge instance lock: {error}");
+            return;
+        }
+    };
+
     println!("QuietPanel Bridge v{}", protocol::VERSION);
     println!("Press Ctrl+C or close this window to stop.");
 

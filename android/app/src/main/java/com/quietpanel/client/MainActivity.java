@@ -29,6 +29,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -73,7 +74,7 @@ public final class MainActivity extends Activity
     private static final int DEFAULT_PHOTO_INTERVAL_SECONDS = 45;
     private static final int MIN_PHOTO_INTERVAL_SECONDS = 10;
     private static final int MAX_PHOTO_INTERVAL_SECONDS = 300;
-    private static final long PHOTO_PAN_FRAME_MS = 100;
+    private static final long PHOTO_PAN_FRAME_MS = 200;
     private static final long PHOTO_TRANSITION_RESERVE_MS = 3000;
     private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.13f;
     private static final float PHOTO_TIME_TEXT_SIZE_SP = 64.0f;
@@ -187,7 +188,6 @@ public final class MainActivity extends Activity
     private LinearLayout workButtonsContainer;
     private Button workScreenshotButton;
     private Button workPasteButton;
-    private Button workYouTubeButton;
     private Bitmap photoBitmap;
     private Bitmap pendingPhotoBitmap;
     private Bitmap softBackgroundBitmap;
@@ -209,6 +209,8 @@ public final class MainActivity extends Activity
     private int clockDownTop;
     private ScaleGestureDetector clockScaleDetector;
     private boolean clockGestureWasScaling;
+    private boolean clockGestureWasDragging;
+    private boolean clockGestureWasPaging;
     private float clockTextScale = 1.0f;
     private float effectiveClockTextScale = 1.0f;
     private int clockFontStyle = PhotoFontManager.STYLE_STOROPIA;
@@ -718,6 +720,7 @@ public final class MainActivity extends Activity
                         }
                     }
                 });
+        final int clockDragTouchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
         clockTouchListener = new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
@@ -726,26 +729,56 @@ public final class MainActivity extends Activity
                     case MotionEvent.ACTION_DOWN:
                         view.getParent().requestDisallowInterceptTouchEvent(true);
                         clockGestureWasScaling = false;
+                        clockGestureWasDragging = false;
+                        clockGestureWasPaging = false;
                         clockDownX = event.getRawX();
                         clockDownY = event.getRawY();
                         clockDownLeft = clockPanel.getLeft();
                         clockDownTop = clockPanel.getTop();
                         return true;
                     case MotionEvent.ACTION_POINTER_DOWN:
+                        view.getParent().requestDisallowInterceptTouchEvent(true);
                         return true;
                     case MotionEvent.ACTION_MOVE:
                         if (clockGestureWasScaling || event.getPointerCount() > 1) {
                             return true;
                         }
+                        float dragX = event.getRawX() - clockDownX;
+                        float dragY = event.getRawY() - clockDownY;
+                        if (!clockGestureWasDragging && !clockGestureWasPaging) {
+                            if (Math.abs(dragX) <= clockDragTouchSlop
+                                    && Math.abs(dragY) <= clockDragTouchSlop) {
+                                return true;
+                            }
+                            if (Math.abs(dragX) > Math.abs(dragY) * 1.2f) {
+                                clockGestureWasPaging = true;
+                                return true;
+                            }
+                            clockGestureWasDragging = true;
+                            view.getParent().requestDisallowInterceptTouchEvent(true);
+                        }
+                        if (clockGestureWasPaging) {
+                            return true;
+                        }
                         moveClockPanel(
-                                clockDownLeft + Math.round(event.getRawX() - clockDownX),
-                                clockDownTop + Math.round(event.getRawY() - clockDownY));
+                                clockDownLeft + Math.round(dragX),
+                                clockDownTop + Math.round(dragY));
                         return true;
                     case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        if (!clockGestureWasScaling) {
+                        if (clockGestureWasPaging
+                                && Math.abs(event.getRawX() - clockDownX)
+                                >= clockDragTouchSlop * 4) {
+                            showAdjacentPage(event.getRawX() < clockDownX ? 1 : -1);
+                        }
+                        if (!clockGestureWasScaling && clockGestureWasDragging) {
+                            moveClockPanel(
+                                    clockDownLeft + Math.round(event.getRawX() - clockDownX),
+                                    clockDownTop + Math.round(event.getRawY() - clockDownY));
                             saveClockPosition();
                         }
+                        view.getParent().requestDisallowInterceptTouchEvent(false);
+                        return true;
+                    case MotionEvent.ACTION_CANCEL:
                         view.getParent().requestDisallowInterceptTouchEvent(false);
                         return true;
                     default:
@@ -869,24 +902,6 @@ public final class MainActivity extends Activity
         workButtonsContainer.setOrientation(LinearLayout.VERTICAL);
         workButtonsContainer.setVisibility(View.GONE);
 
-        workYouTubeButton = new Button(this);
-        workYouTubeButton.setText("YOUTUBE");
-        workYouTubeButton.setTextColor(Color.WHITE);
-        workYouTubeButton.setTextSize(16);
-        workYouTubeButton.setGravity(Gravity.CENTER);
-        workYouTubeButton.setAllCaps(false);
-        workYouTubeButton.setTypeface(PhotoFontManager.get(this, clockFontStyle));
-        StateListDrawable ytBg = new StateListDrawable();
-        ytBg.addState(new int[] { android.R.attr.state_pressed }, rounded(Color.argb(165, 30, 42, 56)));
-        ytBg.addState(new int[] {}, rounded(Color.argb(105, 12, 18, 26)));
-        workYouTubeButton.setBackground(ytBg);
-        workYouTubeButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                sendActionString("open_youtube", "YOUTUBE");
-            }
-        });
-
         workScreenshotButton = new Button(this);
         workScreenshotButton.setText("CAPTURE");
         workScreenshotButton.setTextColor(Color.WHITE);
@@ -923,12 +938,9 @@ public final class MainActivity extends Activity
             }
         });
 
-        LinearLayout.LayoutParams btnYtParams = new LinearLayout.LayoutParams(dp(140), dp(60));
-        btnYtParams.bottomMargin = dp(8);
         LinearLayout.LayoutParams btn1Params = new LinearLayout.LayoutParams(dp(140), dp(60));
         btn1Params.bottomMargin = dp(8);
         LinearLayout.LayoutParams btn2Params = new LinearLayout.LayoutParams(dp(140), dp(60));
-        workButtonsContainer.addView(workYouTubeButton, btnYtParams);
         workButtonsContainer.addView(workScreenshotButton, btn1Params);
         workButtonsContainer.addView(workPasteButton, btn2Params);
 
@@ -1481,9 +1493,6 @@ public final class MainActivity extends Activity
         if (workPasteButton != null) {
             workPasteButton.setTypeface(timeTypeface);
         }
-        if (workYouTubeButton != null) {
-            workYouTubeButton.setTypeface(timeTypeface);
-        }
         if (weatherTemperature != null) {
             weatherTemperature.setTypeface(weatherTypeface);
         }
@@ -1617,6 +1626,8 @@ public final class MainActivity extends Activity
         resizeView(daylightPanel, daylightWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
         resizeView(daylightProgressView, daylightWidth,
                 dp(Math.max(1, Math.round(14.0f * displayScale))));
+        resizeView(daylightLabel, ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(Math.max(1, Math.round(18.0f * displayScale))));
         if (weatherLocation != null && weatherLocation.getLayoutParams() instanceof LinearLayout.LayoutParams) {
             ((LinearLayout.LayoutParams) weatherLocation.getLayoutParams()).leftMargin =
                     dp(Math.max(1, Math.round(8.0f * displayScale)));
