@@ -71,9 +71,37 @@ try {
 Copy-IfDifferent `
     -Source (Join-Path $dist "QuietPanelBridge-v$version-ADB.exe") `
     -Destination (Join-Path $dist 'QuietPanelBridge.exe')
+Copy-IfDifferent `
+    -Source (Join-Path $dist "QuietPanelBridge-v$version-Wireless.exe") `
+    -Destination (Join-Path $dist 'QuietPanelBridge-Wireless.exe')
 
-$builtApk = Join-Path $projectRoot 'android\app\build\outputs\apk\release\app-release.apk'
-Copy-Item -LiteralPath $builtApk -Destination (Join-Path $dist "QuietPanel-v$version.apk") -Force
+$publicApk = Join-Path $projectRoot `
+    'android\app\build\outputs\apk\public\release\app-public-release.apk'
+$privateApk = Join-Path $projectRoot `
+    'android\app\build\outputs\apk\private\release\app-private-release.apk'
+$storopiaFont = Join-Path $projectRoot `
+    'android\app\src\private\assets\fonts\Storopia-Subset.ttf'
+if (-not (Test-Path -LiteralPath $publicApk)) {
+    throw "Public Android APK not found: $publicApk"
+}
+Copy-IfDifferent `
+    -Source $publicApk `
+    -Destination (Join-Path $dist "QuietPanel-v$version-Public.apk")
+$installApk = $publicApk
+if (Test-Path -LiteralPath $storopiaFont) {
+    if (-not (Test-Path -LiteralPath $privateApk)) {
+        throw "Private Android APK not found: $privateApk"
+    }
+    Copy-IfDifferent `
+        -Source $privateApk `
+        -Destination (Join-Path $dist "QuietPanel-v$version-Private-Storopia.apk")
+    $installApk = $privateApk
+}
+# Stable install name. Install-Android.cmd uses only this file so an older
+# versioned APK in dist can never be selected accidentally.
+Copy-IfDifferent `
+    -Source $installApk `
+    -Destination (Join-Path $dist 'QuietPanel.apk')
 
 # 4. ADB Tools
 $adbPath = $env:QUIETPANEL_ADB
@@ -96,6 +124,7 @@ if (Test-Path -LiteralPath $adbPath) {
 # 5. Copy launch and PAN setup scripts
 foreach ($file in @(
     'Install-Android.cmd',
+    'Start-QuietPanel.cmd',
     'Start-QuietPanel-ADB.cmd',
     'Start-QuietPanel-Wireless.cmd'
 )) {

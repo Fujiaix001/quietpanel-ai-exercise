@@ -28,6 +28,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -204,6 +205,8 @@ public final class MainActivity extends Activity
     private int clockDownTop;
     private ScaleGestureDetector clockScaleDetector;
     private boolean clockGestureWasScaling;
+    private boolean clockGestureWasDragging;
+    private boolean clockGestureWasPaging;
     private float clockTextScale = 1.0f;
     private float effectiveClockTextScale = 1.0f;
     private int clockFontStyle = PhotoFontManager.STYLE_STOROPIA;
@@ -709,6 +712,7 @@ public final class MainActivity extends Activity
                         }
                     }
                 });
+        final int clockDragTouchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
         clockTouchListener = new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
@@ -717,26 +721,56 @@ public final class MainActivity extends Activity
                     case MotionEvent.ACTION_DOWN:
                         view.getParent().requestDisallowInterceptTouchEvent(true);
                         clockGestureWasScaling = false;
+                        clockGestureWasDragging = false;
+                        clockGestureWasPaging = false;
                         clockDownX = event.getRawX();
                         clockDownY = event.getRawY();
                         clockDownLeft = clockPanel.getLeft();
                         clockDownTop = clockPanel.getTop();
                         return true;
                     case MotionEvent.ACTION_POINTER_DOWN:
+                        view.getParent().requestDisallowInterceptTouchEvent(true);
                         return true;
                     case MotionEvent.ACTION_MOVE:
                         if (clockGestureWasScaling || event.getPointerCount() > 1) {
                             return true;
                         }
+                        float dragX = event.getRawX() - clockDownX;
+                        float dragY = event.getRawY() - clockDownY;
+                        if (!clockGestureWasDragging && !clockGestureWasPaging) {
+                            if (Math.abs(dragX) <= clockDragTouchSlop
+                                    && Math.abs(dragY) <= clockDragTouchSlop) {
+                                return true;
+                            }
+                            if (Math.abs(dragX) > Math.abs(dragY) * 1.2f) {
+                                clockGestureWasPaging = true;
+                                return true;
+                            }
+                            clockGestureWasDragging = true;
+                            view.getParent().requestDisallowInterceptTouchEvent(true);
+                        }
+                        if (clockGestureWasPaging) {
+                            return true;
+                        }
                         moveClockPanel(
-                                clockDownLeft + Math.round(event.getRawX() - clockDownX),
-                                clockDownTop + Math.round(event.getRawY() - clockDownY));
+                                clockDownLeft + Math.round(dragX),
+                                clockDownTop + Math.round(dragY));
                         return true;
                     case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        if (!clockGestureWasScaling) {
+                        if (clockGestureWasPaging
+                                && Math.abs(event.getRawX() - clockDownX)
+                                >= clockDragTouchSlop * 4) {
+                            showAdjacentPage(event.getRawX() < clockDownX ? 1 : -1);
+                        }
+                        if (!clockGestureWasScaling && clockGestureWasDragging) {
+                            moveClockPanel(
+                                    clockDownLeft + Math.round(event.getRawX() - clockDownX),
+                                    clockDownTop + Math.round(event.getRawY() - clockDownY));
                             saveClockPosition();
                         }
+                        view.getParent().requestDisallowInterceptTouchEvent(false);
+                        return true;
+                    case MotionEvent.ACTION_CANCEL:
                         view.getParent().requestDisallowInterceptTouchEvent(false);
                         return true;
                     default:
@@ -1608,6 +1642,8 @@ public final class MainActivity extends Activity
         resizeView(daylightPanel, daylightWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
         resizeView(daylightProgressView, daylightWidth,
                 dp(Math.max(1, Math.round(14.0f * displayScale))));
+        resizeView(daylightLabel, ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(Math.max(1, Math.round(18.0f * displayScale))));
         if (weatherLocation != null && weatherLocation.getLayoutParams() instanceof LinearLayout.LayoutParams) {
             ((LinearLayout.LayoutParams) weatherLocation.getLayoutParams()).leftMargin =
                     dp(Math.max(1, Math.round(8.0f * displayScale)));
