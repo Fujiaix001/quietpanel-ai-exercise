@@ -235,11 +235,11 @@ fn execute_linux(action: &str) -> ActionOutcome {
         }
         "screenshot_all" => {
             if Command::new("spectacle")
-                .args(["-f", "-b"])
+                .args(["-f", "-b", "-c"])
                 .spawn()
                 .is_ok()
             {
-                ActionOutcome::success("已完成全螢幕截圖")
+                ActionOutcome::success("已完成全螢幕截圖並複製到剪貼簿")
             } else {
                 ActionOutcome::failure("未找到 Spectacle 截圖工具")
             }
@@ -497,6 +497,7 @@ mod uinput {
             let _ = self.file.write_all(slice);
         }
 
+        #[allow(dead_code)]
         pub fn send_key(&mut self, code: u16) {
             self.write_event(EV_KEY, code, 1);
             self.write_event(EV_SYN, SYN_REPORT, 0);
@@ -550,6 +551,7 @@ mod uinput {
         false
     }
 
+    #[allow(dead_code)]
     pub fn send_single_key(key_code: u16) -> bool {
         let lock = get_keyboard();
         if let Ok(mut guard) = lock.lock() {
