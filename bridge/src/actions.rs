@@ -214,23 +214,20 @@ fn execute_linux(action: &str) -> ActionOutcome {
             }
         }
         "media_play_pause" => {
-            if Command::new("playerctl")
-                .args(["play-pause"])
+            let ok = Command::new("qdbus6")
+                .args([
+                    "org.kde.kglobalaccel",
+                    "/component/mediacontrol",
+                    "invokeShortcut",
+                    "playpausemedia",
+                ])
                 .status()
                 .map(|s| s.success())
-                .unwrap_or(false)
-            {
+                .unwrap_or(false);
+            if ok || uinput::send_single_key(uinput::KEY_PLAYPAUSE) {
                 ActionOutcome::success("已切換播放/暫停")
             } else {
-                let _ = Command::new("dbus-send")
-                    .args([
-                        "--type=method_call",
-                        "--dest=org.mpris.MediaPlayer2.spotify",
-                        "/org/mpris/MediaPlayer2",
-                        "org.mpris.MediaPlayer2.Player.PlayPause",
-                    ])
-                    .status();
-                ActionOutcome::success("已切換播放/暫停")
+                ActionOutcome::failure("無法控制媒體播放")
             }
         }
         "screenshot_all" => {
