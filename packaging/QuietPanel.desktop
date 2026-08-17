@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=QuietPanel
+GenericName=QuietPanel Bridge
+Comment=QuietPanel PC Bridge for Linux (KDE System Tray & ADB)
+Exec=/home/hsuchungming/桌面/QuietPanel_v6/start-linux-adb.sh
+Path=/home/hsuchungming/桌面/QuietPanel_v6
+Icon=input-tablet
+Terminal=false
+Categories=Utility;System;
+Keywords=quietpanel;tray;adb;android;
+StartupNotify=false

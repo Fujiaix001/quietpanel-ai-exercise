@@ -32,7 +32,6 @@ const TRAY_ID: u32 = 1;
 const FIRST_PAGE_COMMAND: u32 = 1001;
 #[cfg(windows)]
 const EXIT_COMMAND: u32 = 1099;
-#[cfg(windows)]
 const PAGE_LABELS: [&str; PAGE_COUNT] = [
     "頁面 1：系統監控",
     "頁面 2：磁碟空間",
@@ -44,34 +43,85 @@ const PAGE_LABELS: [&str; PAGE_COUNT] = [
 ];
 
 struct TrayShared {
-    #[allow(dead_code)]
     pages: Mutex<[bool; PAGE_COUNT]>,
-    #[allow(dead_code)]
     sender: Sender<[bool; PAGE_COUNT]>,
-    #[allow(dead_code)]
     running: Arc<AtomicBool>,
 }
 
 static SHARED: OnceLock<TrayShared> = OnceLock::new();
 
-#[cfg(windows)]
-const CLASS_NAME: &[u16] = &[
-    b'Q' as u16,
-    b'u' as u16,
-    b'i' as u16,
-    b'e' as u16,
-    b't' as u16,
-    b'P' as u16,
-    b'a' as u16,
-    b'n' as u16,
-    b'e' as u16,
-    b'l' as u16,
-    b'T' as u16,
-    b'r' as u16,
-    b'a' as u16,
-    b'y' as u16,
-    0,
-];
+#[cfg(unix)]
+use ksni::{
+    blocking::TrayMethods,
+    menu::{CheckmarkItem, StandardItem},
+    MenuItem, ToolTip, Tray,
+};
+
+#[cfg(unix)]
+struct QuietPanelTray {
+    pages: [bool; PAGE_COUNT],
+}
+
+#[cfg(unix)]
+impl Tray for QuietPanelTray {
+    const MENU_ON_ACTIVATE: bool = true;
+
+    fn id(&self) -> String {
+        "QuietPanelBridge".into()
+    }
+    fn title(&self) -> String {
+        "QuietPanel Bridge".into()
+    }
+    fn icon_name(&self) -> String {
+        "input-tablet".into()
+    }
+    fn tool_tip(&self) -> ToolTip {
+        ToolTip {
+            title: "QuietPanel Bridge".into(),
+            description: "QuietPanel Linux Bridge".into(),
+            ..Default::default()
+        }
+    }
+    fn menu(&self) -> Vec<MenuItem<Self>> {
+        let mut items = Vec::new();
+        for i in 0..PAGE_COUNT {
+            let label = PAGE_LABELS[i].to_string();
+            let is_checked = self.pages[i];
+            items.push(MenuItem::Checkmark(CheckmarkItem {
+                label,
+                checked: is_checked,
+                activate: Box::new(move |this: &mut Self| {
+                    if let Some(shared) = SHARED.get() {
+                        let next_state = {
+                            let mut guard = shared.pages.lock().unwrap();
+                            let enabled_count = guard.iter().filter(|&&e| e).count();
+                            if enabled_count <= 1 && guard[i] {
+                                *guard
+                            } else {
+                                guard[i] = !guard[i];
+                                *guard
+                            }
+                        };
+                        this.pages = next_state;
+                        let _ = shared.sender.send(next_state);
+                    }
+                }),
+                ..Default::default()
+            }));
+        }
+        items.push(MenuItem::Separator);
+        items.push(MenuItem::Standard(StandardItem {
+            label: "結束 (Exit)".into(),
+            activate: Box::new(|_this: &mut Self| {
+                if let Some(shared) = SHARED.get() {
+                    shared.running.store(false, Ordering::Relaxed);
+                }
+            }),
+            ..Default::default()
+        }));
+        items
+    }
+}
 
 pub struct TrayController {
     receiver: Receiver<[bool; PAGE_COUNT]>,
@@ -99,6 +149,13 @@ impl TrayController {
                 println!("\nReceived shutdown signal, exiting QuietPanel Bridge...");
                 running_clone.store(false, Ordering::Relaxed);
             });
+
+            // Start StatusNotifierItem Tray
+            std::thread::spawn(move || {
+                if let Err(e) = (QuietPanelTray { pages }).spawn() {
+                    eprintln!("Failed to spawn StatusNotifierItem tray: {e}");
+                }
+            });
         }
 
         Self { receiver, running }
@@ -116,6 +173,25 @@ impl TrayController {
         changed
     }
 }
+
+#[cfg(windows)]
+const CLASS_NAME: &[u16] = &[
+    b'Q' as u16,
+    b'u' as u16,
+    b'i' as u16,
+    b'e' as u16,
+    b't' as u16,
+    b'P' as u16,
+    b'a' as u16,
+    b'n' as u16,
+    b'e' as u16,
+    b'l' as u16,
+    b'T' as u16,
+    b'r' as u16,
+    b'a' as u16,
+    b'y' as u16,
+    0,
+];
 
 #[cfg(windows)]
 unsafe extern "system" fn window_proc(
