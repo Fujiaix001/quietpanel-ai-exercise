@@ -192,15 +192,15 @@ public final class TransportServer {
 
     private String waitingMessage() {
         if (connectionMode == MODE_ADB) {
-            return "等待 USB ADB 連線…";
+            return "等待 ADB…";
         }
         if (connectionMode == MODE_WIFI) {
-            return "等待 Wi-Fi 連線 (TCP " + PORT + ")…";
+            return "等待 Wi-Fi…";
         }
         if (connectionMode == MODE_BT) {
-            return "等待藍牙 PAN 連線 (TCP " + PORT + ")…";
+            return "等待藍牙…";
         }
-        return "等待 ADB / Wi-Fi / 藍牙 PAN…";
+        return "等待連線…";
     }
 
     private void handleStreamSession(BufferedReader reader, Socket clientSocket,
@@ -238,8 +238,7 @@ public final class TransportServer {
 
             String type = message.optString("type", "");
             if ("hello".equals(type)) {
-                String version = message.optString("version", "?");
-                notifyConnection(true, "Rust Bridge " + version + " 已連線");
+                notifyConnection(true, "Bridge 已連線");
                 JSONObject acknowledgement = new JSONObject();
                 acknowledgement.put("v", 1);
                 acknowledgement.put("type", "hello_ack");

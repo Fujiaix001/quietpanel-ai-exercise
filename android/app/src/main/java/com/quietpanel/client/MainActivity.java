@@ -555,8 +555,9 @@ public final class MainActivity extends Activity
 
         appHeader = new LinearLayout(this);
         appHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = makeText("QUIETPANEL  v" + BuildConfig.VERSION_NAME, 22, PRIMARY, Gravity.START);
+        TextView title = makeText("QuietPanel", 20, PRIMARY, Gravity.START);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
         modePillButton = makeText("AUTO", 12, Color.WHITE, Gravity.CENTER);
         modePillButton.setPadding(dp(8), dp(4), dp(8), dp(4));
         modePillButton.setBackground(rounded(Color.argb(125, 20, 30, 45)));
@@ -572,9 +573,13 @@ public final class MainActivity extends Activity
             }
         });
         connectionText = makeText("啟動連線服務…", 13, SECONDARY, Gravity.END);
-        appHeader.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
-        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(dp(72), dp(32));
-        modeParams.setMargins(0, 0, dp(10), 0);
+        connectionText.setSingleLine(true);
+        connectionText.setEllipsize(TextUtils.TruncateAt.END);
+
+        appHeader.addView(title, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(54)));
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(dp(64), dp(30));
+        modeParams.setMargins(dp(12), 0, dp(12), 0);
         appHeader.addView(modePillButton, modeParams);
         appHeader.addView(connectionText, new LinearLayout.LayoutParams(0, dp(54), 1));
         appRoot.addView(appHeader, new LinearLayout.LayoutParams(
