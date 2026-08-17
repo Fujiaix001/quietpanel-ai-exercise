@@ -330,10 +330,238 @@ fn execute_linux(action: &str) -> ActionOutcome {
                 .spawn();
             ActionOutcome::success("YouTube 已開啟")
         }
-        "paste" | "copy" | "cut" | "undo" | "redo" => {
-            ActionOutcome::success(&format!("已執行 {}", label(action).unwrap_or(action)))
+        "paste" => {
+            if uinput::send_hotkey_ctrl(uinput::KEY_V) {
+                ActionOutcome::success("已執行貼上")
+            } else {
+                ActionOutcome::failure("無法模擬貼上按鍵 (/dev/uinput 不可用)")
+            }
+        }
+        "copy" => {
+            if uinput::send_hotkey_ctrl(uinput::KEY_C) {
+                ActionOutcome::success("已執行複製")
+            } else {
+                ActionOutcome::failure("無法模擬複製按鍵 (/dev/uinput 不可用)")
+            }
+        }
+        "cut" => {
+            if uinput::send_hotkey_ctrl(uinput::KEY_X) {
+                ActionOutcome::success("已執行剪下")
+            } else {
+                ActionOutcome::failure("無法模擬剪下按鍵 (/dev/uinput 不可用)")
+            }
+        }
+        "undo" => {
+            if uinput::send_hotkey_ctrl(uinput::KEY_Z) {
+                ActionOutcome::success("已執行復原")
+            } else {
+                ActionOutcome::failure("無法模擬復原按鍵 (/dev/uinput 不可用)")
+            }
+        }
+        "redo" => {
+            if uinput::send_hotkey_ctrl(uinput::KEY_Y) {
+                ActionOutcome::success("已執行重做")
+            } else {
+                ActionOutcome::failure("無法模擬重做按鍵 (/dev/uinput 不可用)")
+            }
         }
         _ => ActionOutcome::failure("未知的按鈕動作"),
+    }
+}
+
+#[cfg(unix)]
+mod uinput {
+    use std::fs::{File, OpenOptions};
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::io::AsRawFd;
+    use std::sync::{Mutex, OnceLock};
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    pub const KEY_LEFTCTRL: u16 = 29;
+    pub const KEY_LEFTSHIFT: u16 = 42;
+    pub const KEY_LEFTALT: u16 = 56;
+    pub const KEY_V: u16 = 47;
+    pub const KEY_C: u16 = 46;
+    pub const KEY_X: u16 = 45;
+    pub const KEY_Z: u16 = 44;
+    pub const KEY_Y: u16 = 21;
+    pub const KEY_PLAYPAUSE: u16 = 164;
+
+    const EV_SYN: u16 = 0x00;
+    const EV_KEY: u16 = 0x01;
+    const SYN_REPORT: u16 = 0;
+
+    const UI_SET_EVBIT: libc::c_ulong = 0x40045564;
+    const UI_SET_KEYBIT: libc::c_ulong = 0x40045565;
+    const UI_DEV_CREATE: libc::c_ulong = 0x5501;
+    const UI_DEV_DESTROY: libc::c_ulong = 0x5502;
+
+    #[repr(C)]
+    struct UinputUserDev {
+        name: [libc::c_char; 80],
+        id: InputId,
+        ff_effects_max: u32,
+        absmax: [i32; 64],
+        absmin: [i32; 64],
+        absfuzz: [i32; 64],
+        absflat: [i32; 64],
+    }
+
+    #[repr(C)]
+    struct InputId {
+        bustype: u16,
+        vendor: u16,
+        product: u16,
+        version: u16,
+    }
+
+    #[repr(C)]
+    struct InputEvent {
+        time: libc::timeval,
+        type_: u16,
+        code: u16,
+        value: i32,
+    }
+
+    pub struct UinputKeyboard {
+        file: File,
+    }
+
+    impl UinputKeyboard {
+        fn new() -> Result<Self, String> {
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open("/dev/uinput")
+                .map_err(|e| format!("Failed to open /dev/uinput: {}", e))?;
+
+            let fd = file.as_raw_fd();
+            unsafe {
+                if libc::ioctl(fd, UI_SET_EVBIT, EV_KEY as libc::c_int) < 0
+                    || libc::ioctl(fd, UI_SET_EVBIT, EV_SYN as libc::c_int) < 0
+                {
+                    return Err("Failed to set EVBIT on uinput".into());
+                }
+
+                let keys = [
+                    KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_LEFTALT,
+                    KEY_V, KEY_C, KEY_X, KEY_Z, KEY_Y,
+                    KEY_PLAYPAUSE,
+                ];
+                for &k in &keys {
+                    libc::ioctl(fd, UI_SET_KEYBIT, k as libc::c_int);
+                }
+
+                let mut dev: UinputUserDev = std::mem::zeroed();
+                let name = b"QuietPanel Virtual Keyboard\0";
+                for (i, &b) in name.iter().enumerate() {
+                    dev.name[i] = b as libc::c_char;
+                }
+                dev.id.bustype = 0x03; // BUS_USB
+                dev.id.vendor = 0x1234;
+                dev.id.product = 0x5678;
+                dev.id.version = 1;
+
+                let dev_slice = std::slice::from_raw_parts(
+                    &dev as *const _ as *const u8,
+                    std::mem::size_of::<UinputUserDev>(),
+                );
+                use std::io::Write;
+                let mut f = &file;
+                f.write_all(dev_slice).map_err(|e| format!("Failed to write dev: {}", e))?;
+
+                if libc::ioctl(fd, UI_DEV_CREATE) < 0 {
+                    return Err("Failed to create uinput device".into());
+                }
+            }
+            sleep(Duration::from_millis(50));
+            Ok(Self { file })
+        }
+
+        fn write_event(&mut self, type_: u16, code: u16, value: i32) {
+            let ev = InputEvent {
+                time: libc::timeval { tv_sec: 0, tv_usec: 0 },
+                type_,
+                code,
+                value,
+            };
+            let slice = unsafe {
+                std::slice::from_raw_parts(
+                    &ev as *const _ as *const u8,
+                    std::mem::size_of::<InputEvent>(),
+                )
+            };
+            use std::io::Write;
+            let _ = self.file.write_all(slice);
+        }
+
+        pub fn send_key(&mut self, code: u16) {
+            self.write_event(EV_KEY, code, 1);
+            self.write_event(EV_SYN, SYN_REPORT, 0);
+            sleep(Duration::from_millis(15));
+            self.write_event(EV_KEY, code, 0);
+            self.write_event(EV_SYN, SYN_REPORT, 0);
+        }
+
+        pub fn send_combo(&mut self, mod_code: u16, key_code: u16) {
+            self.write_event(EV_KEY, mod_code, 1);
+            self.write_event(EV_SYN, SYN_REPORT, 0);
+            sleep(Duration::from_millis(15));
+            self.write_event(EV_KEY, key_code, 1);
+            self.write_event(EV_SYN, SYN_REPORT, 0);
+            sleep(Duration::from_millis(25));
+            self.write_event(EV_KEY, key_code, 0);
+            self.write_event(EV_SYN, SYN_REPORT, 0);
+            sleep(Duration::from_millis(15));
+            self.write_event(EV_KEY, mod_code, 0);
+            self.write_event(EV_SYN, SYN_REPORT, 0);
+        }
+    }
+
+    impl Drop for UinputKeyboard {
+        fn drop(&mut self) {
+            unsafe {
+                libc::ioctl(self.file.as_raw_fd(), UI_DEV_DESTROY);
+            }
+        }
+    }
+
+    static KEYBOARD: OnceLock<Mutex<Option<UinputKeyboard>>> = OnceLock::new();
+
+    fn get_keyboard() -> &'static Mutex<Option<UinputKeyboard>> {
+        KEYBOARD.get_or_init(|| {
+            Mutex::new(UinputKeyboard::new().ok())
+        })
+    }
+
+    pub fn send_hotkey_ctrl(key_code: u16) -> bool {
+        let lock = get_keyboard();
+        if let Ok(mut guard) = lock.lock() {
+            if guard.is_none() {
+                *guard = UinputKeyboard::new().ok();
+            }
+            if let Some(ref mut kb) = *guard {
+                kb.send_combo(KEY_LEFTCTRL, key_code);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn send_single_key(key_code: u16) -> bool {
+        let lock = get_keyboard();
+        if let Ok(mut guard) = lock.lock() {
+            if guard.is_none() {
+                *guard = UinputKeyboard::new().ok();
+            }
+            if let Some(ref mut kb) = *guard {
+                kb.send_key(key_code);
+                return true;
+            }
+        }
+        false
     }
 }
 
