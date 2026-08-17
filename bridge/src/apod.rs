@@ -168,9 +168,22 @@ fn push_to_android(phone_ip: IpAddr, payload: &Payload) -> io::Result<()> {
 }
 
 fn cache_directory() -> Result<PathBuf, String> {
+    #[cfg(windows)]
     if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
         return Ok(PathBuf::from(local_app_data)
             .join("QuietPanel")
+            .join("cache"));
+    }
+
+    #[cfg(unix)]
+    if let Some(xdg_cache) = env::var_os("XDG_CACHE_HOME") {
+        return Ok(PathBuf::from(xdg_cache)
+            .join("quietpanel")
+            .join("cache"));
+    } else if let Some(home) = env::var_os("HOME") {
+        return Ok(PathBuf::from(home)
+            .join(".cache")
+            .join("quietpanel")
             .join("cache"));
     }
 

@@ -2,10 +2,15 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::OnceLock;
 use std::thread;
 
+#[cfg(windows)]
 use windows_sys::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, WPARAM};
+#[cfg(windows)]
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+#[cfg(windows)]
 use windows_sys::Win32::System::Power::{RegisterPowerSettingNotification, POWERBROADCAST_SETTING};
+#[cfg(windows)]
 use windows_sys::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
+#[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
     TranslateMessage, DEVICE_NOTIFY_WINDOW_HANDLE, HWND_MESSAGE, MSG, PBT_POWERSETTINGCHANGE,
@@ -14,6 +19,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 static DISPLAY_STATE_SENDER: OnceLock<Sender<bool>> = OnceLock::new();
 
+#[cfg(windows)]
 const CLASS_NAME: &[u16] = &[
     b'Q' as u16,
     b'u' as u16,
@@ -44,7 +50,12 @@ impl DisplayMonitor {
     pub fn start() -> Self {
         let (sender, receiver) = mpsc::channel();
         let _ = DISPLAY_STATE_SENDER.set(sender);
+        #[cfg(windows)]
         thread::spawn(|| unsafe { monitor_loop() });
+        #[cfg(unix)]
+        thread::spawn(|| {
+            // Linux display monitor placeholder for Phase 1
+        });
         Self {
             receiver,
             display_on: true,
@@ -66,6 +77,7 @@ impl DisplayMonitor {
     }
 }
 
+#[cfg(windows)]
 unsafe extern "system" fn window_proc(
     hwnd: HWND,
     message: u32,
@@ -84,6 +96,7 @@ unsafe extern "system" fn window_proc(
     DefWindowProcW(hwnd, message, wparam, lparam)
 }
 
+#[cfg(windows)]
 fn same_guid(left: windows_sys::core::GUID, right: windows_sys::core::GUID) -> bool {
     left.data1 == right.data1
         && left.data2 == right.data2
@@ -91,6 +104,7 @@ fn same_guid(left: windows_sys::core::GUID, right: windows_sys::core::GUID) -> b
         && left.data4 == right.data4
 }
 
+#[cfg(windows)]
 unsafe fn monitor_loop() {
     let instance = GetModuleHandleW(std::ptr::null());
     let mut window_class: WNDCLASSW = std::mem::zeroed();

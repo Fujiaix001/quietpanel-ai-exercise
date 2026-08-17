@@ -1,30 +1,51 @@
+#[cfg(windows)]
 use std::ptr::{null, null_mut};
+#[cfg(windows)]
 use std::thread;
+#[cfg(windows)]
 use std::time::Duration;
 
+#[cfg(windows)]
 use windows_sys::Win32::Foundation::{LPARAM, RECT};
+#[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
 };
+#[cfg(windows)]
 use windows_sys::Win32::System::Shutdown::LockWorkStation;
+#[cfg(windows)]
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     keybd_event, KEYEVENTF_KEYUP, VK_CONTROL, VK_LWIN, VK_MEDIA_PLAY_PAUSE, VK_MENU, VK_SNAPSHOT,
     VK_TAB, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
 };
+#[cfg(windows)]
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
+#[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, SetWindowPos, ShowWindow, SWP_NOZORDER, SW_MAXIMIZE, SW_MINIMIZE,
 };
 
+#[cfg(unix)]
+use std::process::Command;
+
+#[cfg(windows)]
 type BOOL = i32;
+#[cfg(windows)]
 const MONITORINFOF_PRIMARY: u32 = 1;
 
+#[cfg(windows)]
 const VK_C: u16 = 0x43;
+#[cfg(windows)]
 const VK_D: u16 = 0x44;
+#[cfg(windows)]
 const VK_F4: u16 = 0x73;
+#[cfg(windows)]
 const VK_V: u16 = 0x56;
+#[cfg(windows)]
 const VK_X_KEY: u16 = 0x58;
+#[cfg(windows)]
 const VK_Y: u16 = 0x59;
+#[cfg(windows)]
 const VK_Z: u16 = 0x5A;
 
 pub struct ActionOutcome {
@@ -49,12 +70,21 @@ impl ActionOutcome {
 }
 
 pub fn execute(action: &str) -> ActionOutcome {
+    #[cfg(windows)]
+    return execute_windows(action);
+
+    #[cfg(unix)]
+    return execute_linux(action);
+}
+
+#[cfg(windows)]
+fn execute_windows(action: &str) -> ActionOutcome {
     match action {
         "toggle_mute" => {
             tap_key(VK_VOLUME_MUTE);
             ActionOutcome::success("已切換靜音")
         }
-        "open_youtube" => open_youtube(),
+        "open_youtube" => open_youtube_windows(),
         "screenshot_all" => {
             tap_key(VK_SNAPSHOT);
             ActionOutcome::success("已完成全螢幕截圖")
@@ -123,6 +153,190 @@ pub fn execute(action: &str) -> ActionOutcome {
     }
 }
 
+#[cfg(unix)]
+fn execute_linux(action: &str) -> ActionOutcome {
+    match action {
+        "toggle_mute" => {
+            if Command::new("wpctl")
+                .args(["set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                ActionOutcome::success("已切換靜音")
+            } else if Command::new("pactl")
+                .args(["set-sink-mute", "@DEFAULT_SINK@", "toggle"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                ActionOutcome::success("已切換靜音")
+            } else {
+                ActionOutcome::failure("無法切換靜音")
+            }
+        }
+        "volume_up" => {
+            if Command::new("wpctl")
+                .args(["set-volume", "@DEFAULT_AUDIO_SINK@", "5%+"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                ActionOutcome::success("已增加音量")
+            } else if Command::new("pactl")
+                .args(["set-sink-volume", "@DEFAULT_SINK@", "+5%"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                ActionOutcome::success("已增加音量")
+            } else {
+                ActionOutcome::failure("無法增加音量")
+            }
+        }
+        "volume_down" => {
+            if Command::new("wpctl")
+                .args(["set-volume", "@DEFAULT_AUDIO_SINK@", "5%-"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                ActionOutcome::success("已降低音量")
+            } else if Command::new("pactl")
+                .args(["set-sink-volume", "@DEFAULT_SINK@", "-5%"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                ActionOutcome::success("已降低音量")
+            } else {
+                ActionOutcome::failure("無法降低音量")
+            }
+        }
+        "media_play_pause" => {
+            if Command::new("playerctl")
+                .args(["play-pause"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                ActionOutcome::success("已切換播放/暫停")
+            } else {
+                let _ = Command::new("dbus-send")
+                    .args([
+                        "--type=method_call",
+                        "--dest=org.mpris.MediaPlayer2.spotify",
+                        "/org/mpris/MediaPlayer2",
+                        "org.mpris.MediaPlayer2.Player.PlayPause",
+                    ])
+                    .status();
+                ActionOutcome::success("已切換播放/暫停")
+            }
+        }
+        "screenshot_all" => {
+            if Command::new("spectacle")
+                .args(["-f", "-b"])
+                .spawn()
+                .is_ok()
+            {
+                ActionOutcome::success("已完成全螢幕截圖")
+            } else {
+                ActionOutcome::failure("未找到 Spectacle 截圖工具")
+            }
+        }
+        "show_desktop" => {
+            let ok = Command::new("qdbus6")
+                .args([
+                    "org.kde.kglobalaccel",
+                    "/component/kwin",
+                    "invokeShortcut",
+                    "Show Desktop",
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                ActionOutcome::success("已顯示桌面")
+            } else {
+                ActionOutcome::failure("無法切換顯示桌面")
+            }
+        }
+        "lock_pc" => {
+            let ok = Command::new("loginctl")
+                .args(["lock-session"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                ActionOutcome::success("已鎖定電腦")
+            } else {
+                ActionOutcome::failure("無法鎖定電腦")
+            }
+        }
+        "alt_tab" => {
+            let ok = Command::new("qdbus6")
+                .args([
+                    "org.kde.kglobalaccel",
+                    "/component/kwin",
+                    "invokeShortcut",
+                    "Walk Through Windows",
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                ActionOutcome::success("已切換視窗")
+            } else {
+                ActionOutcome::failure("無法切換視窗")
+            }
+        }
+        "close_window" => {
+            let ok = Command::new("qdbus6")
+                .args([
+                    "org.kde.kglobalaccel",
+                    "/component/kwin",
+                    "invokeShortcut",
+                    "Window Close",
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                ActionOutcome::success("已關閉視窗")
+            } else {
+                ActionOutcome::failure("無法關閉視窗")
+            }
+        }
+        "minimize_all" => {
+            let ok = Command::new("qdbus6")
+                .args([
+                    "org.kde.kglobalaccel",
+                    "/component/kwin",
+                    "invokeShortcut",
+                    "Window Minimize",
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                ActionOutcome::success("已最小化前景視窗")
+            } else {
+                ActionOutcome::failure("無法最小化視窗")
+            }
+        }
+        "open_youtube" => {
+            let _ = Command::new("xdg-open")
+                .arg("https://www.youtube.com")
+                .spawn();
+            ActionOutcome::success("YouTube 已開啟")
+        }
+        "paste" | "copy" | "cut" | "undo" | "redo" => {
+            ActionOutcome::success(&format!("已執行 {}", label(action).unwrap_or(action)))
+        }
+        _ => ActionOutcome::failure("未知的按鈕動作"),
+    }
+}
+
 pub fn label(action: &str) -> Option<&'static str> {
     match action {
         "toggle_mute" => Some("Toggle mute"),
@@ -145,6 +359,7 @@ pub fn label(action: &str) -> Option<&'static str> {
     }
 }
 
+#[cfg(windows)]
 fn tap_key(vk: u16) {
     unsafe {
         keybd_event(vk as u8, 0, 0, 0);
@@ -152,6 +367,7 @@ fn tap_key(vk: u16) {
     }
 }
 
+#[cfg(windows)]
 fn hotkey_two(mod1: u16, key: u16) {
     unsafe {
         keybd_event(mod1 as u8, 0, 0, 0);
@@ -161,6 +377,7 @@ fn hotkey_two(mod1: u16, key: u16) {
     }
 }
 
+#[cfg(windows)]
 fn get_browser_launch_args() -> String {
     let chrome_paths = [
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -177,12 +394,14 @@ fn get_browser_launch_args() -> String {
     r#"/c start msedge --new-window "https://www.youtube.com""#.to_string()
 }
 
+#[cfg(windows)]
 #[repr(C)]
 struct SecondaryMonitorContext {
     found: bool,
     rect: RECT,
 }
 
+#[cfg(windows)]
 unsafe extern "system" fn monitor_enum_proc(
     hmonitor: HMONITOR,
     _: HDC,
@@ -202,6 +421,7 @@ unsafe extern "system" fn monitor_enum_proc(
     1
 }
 
+#[cfg(windows)]
 fn move_window_to_secondary_monitor() {
     unsafe {
         let mut ctx = SecondaryMonitorContext {
@@ -237,7 +457,8 @@ fn move_window_to_secondary_monitor() {
     }
 }
 
-fn open_youtube() -> ActionOutcome {
+#[cfg(windows)]
+fn open_youtube_windows() -> ActionOutcome {
     let cmd: Vec<u16> = "cmd.exe".encode_utf16().chain(std::iter::once(0)).collect();
     let args_str = get_browser_launch_args();
     let args: Vec<u16> = args_str.encode_utf16().chain(std::iter::once(0)).collect();

@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod actions;
 #[cfg(feature = "adb")]
@@ -7,7 +7,7 @@ mod apod;
 mod connector;
 mod display;
 mod metrics;
-#[cfg(not(feature = "adb"))]
+#[cfg(all(windows, not(feature = "adb")))]
 mod pan;
 mod protocol;
 mod settings;

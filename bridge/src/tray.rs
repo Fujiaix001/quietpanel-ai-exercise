@@ -1,13 +1,19 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
+
+#[cfg(windows)]
 use std::thread;
 
+#[cfg(windows)]
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+#[cfg(windows)]
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+#[cfg(windows)]
 use windows_sys::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
 };
+#[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     DispatchMessageW, GetCursorPos, GetMessageW, LoadIconW, PostQuitMessage, RegisterClassW,
@@ -18,10 +24,15 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::settings::PAGE_COUNT;
 
+#[cfg(windows)]
 const TRAY_MESSAGE: u32 = WM_APP + 1;
+#[cfg(windows)]
 const TRAY_ID: u32 = 1;
+#[cfg(windows)]
 const FIRST_PAGE_COMMAND: u32 = 1001;
+#[cfg(windows)]
 const EXIT_COMMAND: u32 = 1099;
+#[cfg(windows)]
 const PAGE_LABELS: [&str; PAGE_COUNT] = [
     "頁面 1：系統監控",
     "頁面 2：磁碟空間",
@@ -33,13 +44,17 @@ const PAGE_LABELS: [&str; PAGE_COUNT] = [
 ];
 
 struct TrayShared {
+    #[allow(dead_code)]
     pages: Mutex<[bool; PAGE_COUNT]>,
+    #[allow(dead_code)]
     sender: Sender<[bool; PAGE_COUNT]>,
+    #[allow(dead_code)]
     running: Arc<AtomicBool>,
 }
 
 static SHARED: OnceLock<TrayShared> = OnceLock::new();
 
+#[cfg(windows)]
 const CLASS_NAME: &[u16] = &[
     b'Q' as u16,
     b'u' as u16,
@@ -72,7 +87,20 @@ impl TrayController {
             sender,
             running: Arc::clone(&running),
         });
+
+        #[cfg(windows)]
         thread::spawn(|| unsafe { tray_loop() });
+
+        #[cfg(unix)]
+        {
+            let running_clone = Arc::clone(&running);
+            // Handle Ctrl+C gracefully
+            let _ = ctrlc::set_handler(move || {
+                println!("\nReceived shutdown signal, exiting QuietPanel Bridge...");
+                running_clone.store(false, Ordering::Relaxed);
+            });
+        }
+
         Self { receiver, running }
     }
 
@@ -89,6 +117,7 @@ impl TrayController {
     }
 }
 
+#[cfg(windows)]
 unsafe extern "system" fn window_proc(
     hwnd: HWND,
     message: u32,
@@ -112,6 +141,7 @@ unsafe extern "system" fn window_proc(
     DefWindowProcW(hwnd, message, wparam, lparam)
 }
 
+#[cfg(windows)]
 unsafe fn tray_loop() {
     let instance = GetModuleHandleW(std::ptr::null());
     let mut window_class: WNDCLASSW = std::mem::zeroed();
@@ -151,6 +181,7 @@ unsafe fn tray_loop() {
     }
 }
 
+#[cfg(windows)]
 unsafe fn add_icon(hwnd: HWND) {
     let mut icon = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
@@ -166,6 +197,7 @@ unsafe fn add_icon(hwnd: HWND) {
     Shell_NotifyIconW(NIM_ADD, &icon);
 }
 
+#[cfg(windows)]
 unsafe fn remove_icon(hwnd: HWND) {
     let icon = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
@@ -176,6 +208,7 @@ unsafe fn remove_icon(hwnd: HWND) {
     Shell_NotifyIconW(NIM_DELETE, &icon);
 }
 
+#[cfg(windows)]
 unsafe fn show_menu(hwnd: HWND) {
     let menu = CreatePopupMenu();
     if menu.is_null() {
@@ -222,6 +255,7 @@ unsafe fn show_menu(hwnd: HWND) {
     handle_command(command, hwnd);
 }
 
+#[cfg(windows)]
 unsafe fn handle_command(command: u32, hwnd: HWND) {
     if (FIRST_PAGE_COMMAND..FIRST_PAGE_COMMAND + PAGE_COUNT as u32).contains(&command) {
         toggle_page((command - FIRST_PAGE_COMMAND) as usize);
@@ -233,6 +267,7 @@ unsafe fn handle_command(command: u32, hwnd: HWND) {
     }
 }
 
+#[cfg(windows)]
 fn toggle_page(index: usize) {
     let Some(shared) = SHARED.get() else {
         return;
@@ -257,10 +292,12 @@ fn toggle_for_test(mut pages: [bool; PAGE_COUNT], index: usize) -> [bool; PAGE_C
     pages
 }
 
+#[cfg(windows)]
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+#[cfg(windows)]
 fn copy_utf16(target: &mut [u16], text: &str) {
     let limit = target.len().saturating_sub(1);
     for (destination, value) in target.iter_mut().take(limit).zip(text.encode_utf16()) {

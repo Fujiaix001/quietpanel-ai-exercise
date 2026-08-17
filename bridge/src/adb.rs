@@ -1,9 +1,12 @@
 use std::env;
 use std::io;
-use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const FORWARDS: [(&str, &str); 2] = [("tcp:27183", "tcp:27183"), ("tcp:27184", "tcp:27184")];
 
@@ -17,14 +20,17 @@ impl Adb {
             return Self { path: path.into() };
         }
 
+        let exe_name = if cfg!(windows) { "adb.exe" } else { "adb" };
+
         if let Ok(mut path) = env::current_exe() {
             path.pop();
-            path.push("adb.exe");
+            path.push(exe_name);
             if path.is_file() {
                 return Self { path };
             }
         }
 
+        #[cfg(windows)]
         if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
             let path = PathBuf::from(local_app_data)
                 .join("Android")
@@ -36,8 +42,26 @@ impl Adb {
             }
         }
 
+        #[cfg(unix)]
+        if let Some(home) = env::var_os("HOME") {
+            let home_path = PathBuf::from(home);
+            let candidates = [
+                home_path.join(".local").join("bin").join("adb"),
+                home_path
+                    .join("Android")
+                    .join("Sdk")
+                    .join("platform-tools")
+                    .join("adb"),
+            ];
+            for path in candidates {
+                if path.is_file() {
+                    return Self { path };
+                }
+            }
+        }
+
         Self {
-            path: PathBuf::from("adb.exe"),
+            path: PathBuf::from(exe_name),
         }
     }
 
@@ -81,10 +105,11 @@ impl Adb {
     }
 
     fn run(&self, args: &[&str]) -> io::Result<Output> {
-        Command::new(&self.path)
-            .args(args)
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
+        let mut cmd = Command::new(&self.path);
+        cmd.args(args);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.output()
     }
 }
 
