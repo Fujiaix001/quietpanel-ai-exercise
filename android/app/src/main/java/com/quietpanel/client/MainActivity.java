@@ -840,12 +840,12 @@ public final class MainActivity extends Activity
         daylightLabel.setIncludeFontPadding(false);
         daylightLabel.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
         daylightPanel.addView(daylightProgressView, new LinearLayout.LayoutParams(
-                dp(220), dp(14)));
+                dp(147), dp(14)));
         daylightPanel.addView(daylightLabel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(18)));
         daylightPanel.setVisibility(View.GONE);
         clockPanel.addView(daylightPanel, new LinearLayout.LayoutParams(
-                dp(220), LinearLayout.LayoutParams.WRAP_CONTENT));
+                dp(147), LinearLayout.LayoutParams.WRAP_CONTENT));
 
         alarmRow = new LinearLayout(this);
         alarmRow.setGravity(Gravity.RIGHT | Gravity.BOTTOM);
@@ -1627,7 +1627,7 @@ public final class MainActivity extends Activity
         resizeView(weatherIcon, weatherSize, weatherSize);
         resizeView(weatherTemperature, ViewGroup.LayoutParams.WRAP_CONTENT, weatherSize);
         resizeView(weatherLocation, ViewGroup.LayoutParams.WRAP_CONTENT, weatherSize);
-        int daylightWidth = dp(Math.max(1, Math.round(220.0f * displayScale)));
+        int daylightWidth = dp(Math.max(1, Math.round(147.0f * displayScale)));
         resizeView(daylightPanel, daylightWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
         resizeView(daylightProgressView, daylightWidth,
                 dp(Math.max(1, Math.round(14.0f * displayScale))));
