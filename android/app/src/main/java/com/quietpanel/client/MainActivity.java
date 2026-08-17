@@ -803,6 +803,7 @@ public final class MainActivity extends Activity
 
         photoDate = makeText("", PHOTO_DATE_TEXT_SIZE_SP, Color.WHITE, Gravity.RIGHT);
         photoDate.setIncludeFontPadding(false);
+        photoDate.setSingleLine(true);
         photoDate.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
         dateRow = new LinearLayout(this);
         dateRow.setGravity(Gravity.RIGHT | Gravity.BOTTOM);
@@ -838,14 +839,17 @@ public final class MainActivity extends Activity
         daylightProgressView = new DaylightProgressView(this);
         daylightLabel = makeText("", 12, Color.WHITE, Gravity.RIGHT);
         daylightLabel.setIncludeFontPadding(false);
+        daylightLabel.setSingleLine(true);
         daylightLabel.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
-        daylightPanel.addView(daylightProgressView, new LinearLayout.LayoutParams(
-                dp(147), dp(14)));
+        LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(
+                dp(140), dp(14));
+        lineParams.gravity = Gravity.RIGHT;
+        daylightPanel.addView(daylightProgressView, lineParams);
         daylightPanel.addView(daylightLabel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(18)));
         daylightPanel.setVisibility(View.GONE);
         clockPanel.addView(daylightPanel, new LinearLayout.LayoutParams(
-                dp(147), LinearLayout.LayoutParams.WRAP_CONTENT));
+                dp(220), LinearLayout.LayoutParams.WRAP_CONTENT));
 
         alarmRow = new LinearLayout(this);
         alarmRow.setGravity(Gravity.RIGHT | Gravity.BOTTOM);
@@ -1627,9 +1631,10 @@ public final class MainActivity extends Activity
         resizeView(weatherIcon, weatherSize, weatherSize);
         resizeView(weatherTemperature, ViewGroup.LayoutParams.WRAP_CONTENT, weatherSize);
         resizeView(weatherLocation, ViewGroup.LayoutParams.WRAP_CONTENT, weatherSize);
-        int daylightWidth = dp(Math.max(1, Math.round(147.0f * displayScale)));
-        resizeView(daylightPanel, daylightWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
-        resizeView(daylightProgressView, daylightWidth,
+        int daylightPanelWidth = dp(Math.max(1, Math.round(220.0f * displayScale)));
+        int daylightLineWidth = dp(Math.max(1, Math.round(140.0f * displayScale)));
+        resizeView(daylightPanel, daylightPanelWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+        resizeView(daylightProgressView, daylightLineWidth,
                 dp(Math.max(1, Math.round(14.0f * displayScale))));
         resizeView(daylightLabel, ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(Math.max(1, Math.round(18.0f * displayScale))));
