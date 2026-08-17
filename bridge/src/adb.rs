@@ -143,15 +143,26 @@ fn parse_single_device(output: &str) -> Result<String, String> {
         }
     }
 
-    match ready.as_slice() {
-        [serial] => Ok(serial.clone()),
-        [] if blocked.is_empty() => Err("No Android device detected".to_string()),
-        [] => Err(blocked.join(", ")),
-        _ => Err(format!(
-            "Multiple Android devices detected: {}",
-            ready.join(", ")
-        )),
+    if let Ok(target) = env::var("QUIETPANEL_SERIAL") {
+        if ready.contains(&target) {
+            return Ok(target);
+        }
     }
+
+    if ready.len() == 1 {
+        return Ok(ready[0].clone());
+    }
+
+    if ready.is_empty() {
+        if blocked.is_empty() {
+            return Err("No Android device detected".to_string());
+        } else {
+            return Err(blocked.join(", "));
+        }
+    }
+
+    // Default to first ready device when multiple devices are attached
+    Ok(ready[0].clone())
 }
 
 fn forward_exists(output: &str, serial: &str, local: &str, remote: &str) -> bool {
