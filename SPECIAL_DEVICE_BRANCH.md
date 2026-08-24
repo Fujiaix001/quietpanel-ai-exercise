@@ -1,6 +1,6 @@
 # 特定裝置版：Redmi／Android 4.2 私有相簿
 
-這個分支目前的穩定版本是 `42.0.5-redmi42`。
+這個分支目前的穩定版本是 `42.0.6-redmi42`。
 
 - Git 分支：`codex/special-redmi-android42`
 - 對應手機：第一代 Redmi，Android 4.2.2
@@ -14,6 +14,9 @@
 本版新增私有相簿來源資料夾勾選；`42.0.x-redmi42` 是這台手機專用的
 獨立版號線，與通用版 `9.x` 不連續。需安裝本版才會看到資料夾篩選。
 
+`42.0.6` 將第三頁設定整理成可展開的「時鐘與版面、相簿與播放、天氣、
+電源與夜間、鬧鐘」五區，並把儲存操作固定在畫面底部；設定鍵值與功能不變。
+
 `42.0.2` 在暫離相簿頁時保留目前照片，只停止背景掃描與動畫；重新進入
 會立即顯示原畫面，再於背景更新相簿索引。
 
@@ -21,7 +24,7 @@
 
 - `build.ps1` 只建置 Private flavor，不再產生 Public APK。
 - 日常安裝使用 `dist\QuietPanel.apk`；帶版號的封存檔是
-  `dist\QuietPanel-v42.0.5-redmi42-Private-Storopia.apk`。
+  `dist\QuietPanel-v42.0.6-redmi42-Private-Storopia.apk`。
 - ADB Bridge 使用 `dist\QuietPanelBridge.exe`；Wireless Bridge 使用
   `dist\QuietPanelBridge-Wireless.exe`。
 - ADB 與 Wireless Bridge 共用單一執行個體鎖，避免兩個 Bridge 同時向手機

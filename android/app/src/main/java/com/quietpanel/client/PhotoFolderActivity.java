@@ -168,151 +168,69 @@ public final class PhotoFolderActivity extends Activity {
     }
 
     private View buildInterface() {
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setBackgroundColor(BACKGROUND);
+
         ScrollView pageScroll = new ScrollView(this);
         pageScroll.setFillViewport(true);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(10), dp(18), dp(10));
+        root.setPadding(dp(18), dp(12), dp(18), dp(14));
         root.setBackgroundColor(BACKGROUND);
+
+        TextView eyebrow = text("QUIETPANEL · PAGE 3", 12, ACCENT);
+        eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
+        root.addView(eyebrow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(20)));
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout titleStack = new LinearLayout(this);
-        titleStack.setOrientation(LinearLayout.VERTICAL);
-        TextView title = text("相簿設定", 23, PRIMARY);
+        TextView title = text("相簿時鐘設定", 24, PRIMARY);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        TextView version = text("版本 " + BuildConfig.VERSION_NAME, 12, SECONDARY);
-        titleStack.addView(title, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(25)));
-        titleStack.addView(version, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(17)));
         selectionText = text("", 14, ACCENT);
-        selectionText.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        Button cancel = button("取消", PANEL);
-        cancel.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                finish();
-            }
-        });
-        Button save = button("套用", Color.rgb(37, 124, 137));
-        save.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                saveSelection();
-            }
-        });
-        titleRow.addView(titleStack, new LinearLayout.LayoutParams(0, dp(42), 2));
-        titleRow.addView(selectionText, new LinearLayout.LayoutParams(0, dp(42), 1));
-        titleRow.addView(cancel, new LinearLayout.LayoutParams(dp(100), dp(38)));
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(dp(100), dp(38));
-        saveParams.setMargins(dp(10), 0, 0, 0);
-        titleRow.addView(save, saveParams);
+        selectionText.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        titleRow.addView(title, new LinearLayout.LayoutParams(0, dp(34), 1));
+        titleRow.addView(selectionText, new LinearLayout.LayoutParams(dp(220), dp(34)));
         root.addView(titleRow);
 
-        backgroundCheck = new CheckBox(this);
-        backgroundCheck.setText("顯示時間日期半透明底板");
-        backgroundCheck.setTextColor(PRIMARY);
-        backgroundCheck.setTextSize(17);
-        backgroundCheck.setChecked(getSharedPreferences(PREFERENCES, MODE_PRIVATE)
-                .getBoolean(CLOCK_BACKGROUND, true));
-        backgroundCheck.setPadding(dp(10), dp(3), dp(10), dp(3));
-        root.addView(backgroundCheck, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
+        TextView subtitle = text("依類別展開，需要時再調整；所有既有功能均保留。", 14, SECONDARY);
+        root.addView(subtitle, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(22)));
+        TextView version = text("版本 " + BuildConfig.VERSION_NAME, 12, SECONDARY);
+        version.setPadding(0, 0, 0, dp(5));
+        root.addView(version, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(22)));
 
         SharedPreferences clockPrefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
-        root.addView(sectionTitle("時鐘與省電"));
+        final LinearLayout clockSection = addSettingsSection(root,
+                "時鐘與版面", "時間、日期、底板與字型", true);
         timeCheck = option("顯示時間", clockPrefs.getBoolean(CLOCK_TIME_ENABLED, true));
         dateCheck = option("顯示日期", clockPrefs.getBoolean(CLOCK_DATE_ENABLED, true));
-        burnInCheck = option("防烙印微幅位移", clockPrefs.getBoolean(BURN_IN_ENABLED, true));
-        ambientCheck = option("依環境光線調整亮度",
-                clockPrefs.getBoolean(AMBIENT_BRIGHTNESS_ENABLED, false));
-        lowPowerCheck = option("低耗電模式（停用相片平移動畫）",
-                clockPrefs.getBoolean(LOW_POWER_ENABLED, false));
-        root.addView(timeCheck);
-        root.addView(dateCheck);
-        root.addView(burnInCheck);
-        root.addView(ambientCheck);
-        root.addView(lowPowerCheck);
+        backgroundCheck = option("顯示時間日期半透明底板",
+                clockPrefs.getBoolean(CLOCK_BACKGROUND, true));
+        clockSection.addView(timeCheck);
+        clockSection.addView(dateCheck);
+        clockSection.addView(backgroundCheck);
 
-        nightCheck = option("夜間定時暗屏", clockPrefs.getBoolean(NIGHT_MODE_ENABLED, false));
-        root.addView(nightCheck);
-        nightStartHour = clockPrefs.getInt(NIGHT_START_HOUR, 23);
-        nightEndHour = clockPrefs.getInt(NIGHT_END_HOUR, 7);
-        LinearLayout nightRow = new LinearLayout(this);
-        nightRow.setGravity(Gravity.CENTER_VERTICAL);
-        nightStartButton = button("", PANEL);
-        nightEndButton = button("", PANEL);
-        updateNightButtons();
-        nightStartButton.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { selectNightHour(true); }
-        });
-        nightEndButton.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { selectNightHour(false); }
-        });
-        nightRow.addView(nightStartButton, new LinearLayout.LayoutParams(0, dp(38), 1));
-        LinearLayout.LayoutParams nightEndParams = new LinearLayout.LayoutParams(0, dp(38), 1);
-        nightEndParams.setMargins(dp(10), 0, 0, 0);
-        nightRow.addView(nightEndButton, nightEndParams);
-        root.addView(nightRow);
-
-        root.addView(sectionTitle("電腦提供的天氣"));
-        weatherCheck = option("顯示溫度與天氣圖示",
-                clockPrefs.getBoolean(WEATHER_ENABLED, true));
-        weatherLocationCheck = option("顯示地名",
-                clockPrefs.getBoolean(WEATHER_SHOW_LOCATION, false));
-        weatherCompactCheck = option("精簡排列（無地名時與日期同列）",
-                clockPrefs.getBoolean(WEATHER_COMPACT_MODE, true));
-        weatherDaylightCheck = option("顯示日照進度線（日出／日落）",
-                clockPrefs.getBoolean(WEATHER_DAYLIGHT_ENABLED, true));
-        weatherCompactCheck.setEnabled(!weatherLocationCheck.isChecked());
-        weatherCompactCheck.setAlpha(weatherLocationCheck.isChecked() ? 0.45f : 1.0f);
-        weatherLocationCheck.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                boolean available = !weatherLocationCheck.isChecked();
-                weatherCompactCheck.setEnabled(available);
-                weatherCompactCheck.setAlpha(available ? 1.0f : 0.45f);
-            }
-        });
-        root.addView(weatherCheck);
-        root.addView(weatherLocationCheck);
-        root.addView(weatherCompactCheck);
-        root.addView(weatherDaylightCheck);
-
-        root.addView(sectionTitle("天氣字型"));
-        weatherFontSpinner = createFontSpinner(clockPrefs.getInt(
-                WEATHER_FONT_STYLE, clockPrefs.getInt(
+        fontSpinner = addFontSetting(clockSection, "時間字型", clockPrefs.getInt(
+                CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA));
+        dateFontSpinner = addFontSetting(clockSection, "日期字型", clockPrefs.getInt(
+                DATE_FONT_STYLE, clockPrefs.getInt(
                         CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA)));
-        root.addView(weatherFontSpinner, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
 
-        root.addView(sectionTitle("鬧鐘"));
-        alarmCheck = option("啟用鬧鐘",
-                clockPrefs.getBoolean(AlarmHelper.PREF_ALARM_ENABLED, false));
-        alarmRepeatCheck = option("每天重複",
-                clockPrefs.getBoolean(AlarmHelper.PREF_ALARM_REPEAT, true));
-        alarmHour = clockPrefs.getInt(AlarmHelper.PREF_ALARM_HOUR, 7);
-        alarmMinute = clockPrefs.getInt(AlarmHelper.PREF_ALARM_MINUTE, 0);
-        alarmTimeButton = button("", PANEL);
-        updateAlarmButton();
-        alarmTimeButton.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { selectAlarmTime(); }
-        });
-        root.addView(alarmCheck);
-        root.addView(alarmRepeatCheck);
-        root.addView(alarmTimeButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
+        final LinearLayout albumSection = addSettingsSection(root,
+                "相簿與播放", "照片來源、播放間隔與資料夾", false);
 
         LinearLayout intervalRow = new LinearLayout(this);
-        intervalRow.setGravity(Gravity.CENTER_VERTICAL);
+        intervalRow.setOrientation(LinearLayout.VERTICAL);
         intervalText = text("", 16, PRIMARY);
-        intervalText.setPadding(dp(10), 0, dp(8), 0);
+        intervalText.setPadding(dp(10), dp(3), dp(8), 0);
         intervalSeek = flatSeekBar();
+        intervalSeek.setContentDescription("相片播放間隔");
         intervalSeek.setMax((300 - 10) / 5);
-        int savedSeconds = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
-                .getInt(PHOTO_INTERVAL_SECONDS, 45);
+        int savedSeconds = clockPrefs.getInt(PHOTO_INTERVAL_SECONDS, 45);
         intervalSeek.setProgress(Math.max(0, Math.min(intervalSeek.getMax(),
                 (savedSeconds - 10) / 5)));
         intervalSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -329,52 +247,49 @@ public final class PhotoFolderActivity extends Activity {
             public void onStopTrackingTouch(SeekBar seekBar) {
             }
         });
-        intervalRow.addView(intervalText, new LinearLayout.LayoutParams(dp(150), dp(26)));
-        intervalRow.addView(intervalSeek, new LinearLayout.LayoutParams(0, dp(26), 1));
-        root.addView(intervalRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(26)));
+        intervalRow.addView(intervalText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
+        intervalRow.addView(intervalSeek, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(34)));
+        albumSection.addView(intervalRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(62)));
         updateIntervalText();
-
-        android.content.SharedPreferences preferences = getSharedPreferences(
-                PREFERENCES, MODE_PRIVATE);
-        root.addView(sectionTitle("時間字型"));
-        fontSpinner = createFontSpinner(preferences.getInt(
-                CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA));
-        root.addView(fontSpinner, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
-
-        root.addView(sectionTitle("日期字型"));
-        dateFontSpinner = createFontSpinner(preferences.getInt(
-                DATE_FONT_STYLE, preferences.getInt(
-                        CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA)));
-        root.addView(dateFontSpinner, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
 
         privateAlbumCheck = option("使用「手機私有相簿」中的照片",
                 clockPrefs.getBoolean(PRIVATE_ALBUM_ENABLED, false));
+        final LinearLayout privateAlbumOptions = new LinearLayout(this);
+        privateAlbumOptions.setOrientation(LinearLayout.VERTICAL);
         privateAlbumCheck.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 updatePrivateAlbumFolderEnabled();
+                privateAlbumOptions.setVisibility(
+                        privateAlbumCheck.isChecked() ? View.VISIBLE : View.GONE);
                 updateSelectionCount();
             }
         });
-        root.addView(privateAlbumCheck);
+        albumSection.addView(privateAlbumCheck);
         privateAlbumFolderHint = text(
                 "由手機私有相簿集中管理；加入或刪除照片後會自動重新讀取。",
                 14, SECONDARY);
-        privateAlbumFolderHint.setPadding(dp(10), 0, dp(10), dp(5));
-        root.addView(privateAlbumFolderHint);
-        root.addView(sectionTitle("私有相簿來源資料夾"));
+        privateAlbumFolderHint.setPadding(dp(10), 0, dp(10), dp(6));
+        privateAlbumOptions.addView(privateAlbumFolderHint);
+        privateAlbumOptions.addView(sectionTitle("私有相簿來源資料夾"));
         privateAlbumFolderList = new LinearLayout(this);
         privateAlbumFolderList.setOrientation(LinearLayout.VERTICAL);
-        root.addView(privateAlbumFolderList, new LinearLayout.LayoutParams(
+        privateAlbumOptions.addView(privateAlbumFolderList, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        privateAlbumOptions.setVisibility(
+                privateAlbumCheck.isChecked() ? View.VISIBLE : View.GONE);
+        albumSection.addView(privateAlbumOptions, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         loadPrivateAlbumFolders();
 
         if (Build.VERSION.SDK_INT >= 21) {
             Button systemFolderPicker = button("從系統選擇照片資料夾／SD 卡", ACCENT);
+            systemFolderPicker.setContentDescription("從系統選擇照片資料夾或 SD 卡");
             systemFolderPicker.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View view) {
@@ -382,16 +297,17 @@ public final class PhotoFolderActivity extends Activity {
                 }
             });
             LinearLayout.LayoutParams pickerParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
-            pickerParams.setMargins(0, dp(10), 0, dp(4));
-            root.addView(systemFolderPicker, pickerParams);
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(46));
+            pickerParams.setMargins(0, dp(12), 0, dp(4));
+            albumSection.addView(systemFolderPicker, pickerParams);
             TextView pickerHint = text(
                     "Fire、Android 5 以上請從這裡選取實體 SD 卡內的資料夾。",
                     14, SECONDARY);
             pickerHint.setPadding(dp(10), 0, dp(10), dp(4));
-            root.addView(pickerHint);
+            albumSection.addView(pickerHint);
         }
 
+        albumSection.addView(sectionTitle("裝置資料夾"));
         LinearLayout pathRow = new LinearLayout(this);
         pathRow.setGravity(Gravity.CENTER_VERTICAL);
         Button up = button("上一層", PANEL);
@@ -403,15 +319,11 @@ public final class PhotoFolderActivity extends Activity {
         });
         pathText = text("", 15, SECONDARY);
         pathText.setPadding(dp(14), 0, 0, 0);
-        pathRow.addView(up, new LinearLayout.LayoutParams(dp(110), dp(35)));
-        pathRow.addView(pathText, new LinearLayout.LayoutParams(0, dp(35), 1));
-        root.addView(pathRow);
+        pathRow.addView(up, new LinearLayout.LayoutParams(dp(110), dp(44)));
+        pathRow.addView(pathText, new LinearLayout.LayoutParams(0, dp(44), 1));
+        albumSection.addView(pathRow);
 
-        currentFolderCheck = new CheckBox(this);
-        currentFolderCheck.setText("使用目前資料夾中的照片（包含子目錄）");
-        currentFolderCheck.setTextColor(PRIMARY);
-        currentFolderCheck.setTextSize(17);
-        currentFolderCheck.setPadding(dp(10), dp(4), dp(10), dp(4));
+        currentFolderCheck = option("使用目前資料夾中的照片（包含子目錄）", false);
         currentFolderCheck.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -419,22 +331,237 @@ public final class PhotoFolderActivity extends Activity {
                         isPartiallySelected(currentDirectory) || currentFolderCheck.isChecked());
             }
         });
-        root.addView(currentFolderCheck, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+        albumSection.addView(currentFolderCheck);
 
         TextView hint = text("點資料夾名稱進入；勾選方框可一次選擇多個資料夾。", 14, SECONDARY);
         hint.setPadding(dp(10), 0, dp(10), dp(6));
-        root.addView(hint);
+        albumSection.addView(hint);
 
         folderList = new LinearLayout(this);
         folderList.setOrientation(LinearLayout.VERTICAL);
-        root.addView(folderList, new LinearLayout.LayoutParams(
+        albumSection.addView(folderList, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        final LinearLayout weatherSection = addSettingsSection(root,
+                "天氣", "溫度、地名、日照與字型", false);
+        weatherCheck = option("顯示溫度與天氣圖示",
+                clockPrefs.getBoolean(WEATHER_ENABLED, true));
+        final LinearLayout weatherOptions = new LinearLayout(this);
+        weatherOptions.setOrientation(LinearLayout.VERTICAL);
+        weatherLocationCheck = option("顯示地名",
+                clockPrefs.getBoolean(WEATHER_SHOW_LOCATION, false));
+        weatherCompactCheck = option("精簡排列（無地名時與日期同列）",
+                clockPrefs.getBoolean(WEATHER_COMPACT_MODE, true));
+        weatherDaylightCheck = option("顯示日照進度線（日出／日落）",
+                clockPrefs.getBoolean(WEATHER_DAYLIGHT_ENABLED, true));
+        weatherCompactCheck.setEnabled(!weatherLocationCheck.isChecked());
+        weatherCompactCheck.setAlpha(weatherLocationCheck.isChecked() ? 0.45f : 1.0f);
+        weatherLocationCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                boolean available = !weatherLocationCheck.isChecked();
+                weatherCompactCheck.setEnabled(available);
+                weatherCompactCheck.setAlpha(available ? 1.0f : 0.45f);
+            }
+        });
+        weatherCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                weatherOptions.setVisibility(
+                        weatherCheck.isChecked() ? View.VISIBLE : View.GONE);
+            }
+        });
+        weatherSection.addView(weatherCheck);
+        weatherOptions.addView(weatherLocationCheck);
+        weatherOptions.addView(weatherCompactCheck);
+        weatherOptions.addView(weatherDaylightCheck);
+        weatherFontSpinner = addFontSetting(weatherOptions, "天氣字型",
+                clockPrefs.getInt(WEATHER_FONT_STYLE, clockPrefs.getInt(
+                        CLOCK_FONT_STYLE, PhotoFontManager.STYLE_STOROPIA)));
+        weatherOptions.setVisibility(weatherCheck.isChecked() ? View.VISIBLE : View.GONE);
+        weatherSection.addView(weatherOptions);
+
+        final LinearLayout powerSection = addSettingsSection(root,
+                "電源與夜間", "防烙印、亮度、低耗電與暗屏", false);
+        burnInCheck = option("防烙印微幅位移", clockPrefs.getBoolean(BURN_IN_ENABLED, true));
+        ambientCheck = option("依環境光線調整亮度",
+                clockPrefs.getBoolean(AMBIENT_BRIGHTNESS_ENABLED, false));
+        lowPowerCheck = option("低耗電模式（停用相片平移動畫）",
+                clockPrefs.getBoolean(LOW_POWER_ENABLED, false));
+        nightCheck = option("夜間定時暗屏", clockPrefs.getBoolean(NIGHT_MODE_ENABLED, false));
+        powerSection.addView(burnInCheck);
+        powerSection.addView(ambientCheck);
+        powerSection.addView(lowPowerCheck);
+        powerSection.addView(nightCheck);
+
+        nightStartHour = clockPrefs.getInt(NIGHT_START_HOUR, 23);
+        nightEndHour = clockPrefs.getInt(NIGHT_END_HOUR, 7);
+        final LinearLayout nightRow = new LinearLayout(this);
+        nightRow.setGravity(Gravity.CENTER_VERTICAL);
+        nightStartButton = button("", PANEL);
+        nightEndButton = button("", PANEL);
+        updateNightButtons();
+        nightStartButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { selectNightHour(true); }
+        });
+        nightEndButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { selectNightHour(false); }
+        });
+        nightCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                nightRow.setVisibility(nightCheck.isChecked() ? View.VISIBLE : View.GONE);
+            }
+        });
+        nightRow.addView(nightStartButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+        LinearLayout.LayoutParams nightEndParams = new LinearLayout.LayoutParams(0, dp(44), 1);
+        nightEndParams.setMargins(dp(10), 0, 0, 0);
+        nightRow.addView(nightEndButton, nightEndParams);
+        nightRow.setVisibility(nightCheck.isChecked() ? View.VISIBLE : View.GONE);
+        powerSection.addView(nightRow);
+
+        final LinearLayout alarmSection = addSettingsSection(root,
+                "鬧鐘", "啟用、重複與響鈴時間", false);
+        alarmCheck = option("啟用鬧鐘",
+                clockPrefs.getBoolean(AlarmHelper.PREF_ALARM_ENABLED, false));
+        final LinearLayout alarmOptions = new LinearLayout(this);
+        alarmOptions.setOrientation(LinearLayout.VERTICAL);
+        alarmRepeatCheck = option("每天重複",
+                clockPrefs.getBoolean(AlarmHelper.PREF_ALARM_REPEAT, true));
+        alarmHour = clockPrefs.getInt(AlarmHelper.PREF_ALARM_HOUR, 7);
+        alarmMinute = clockPrefs.getInt(AlarmHelper.PREF_ALARM_MINUTE, 0);
+        alarmTimeButton = button("", PANEL);
+        updateAlarmButton();
+        alarmTimeButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { selectAlarmTime(); }
+        });
+        alarmCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                alarmOptions.setVisibility(alarmCheck.isChecked() ? View.VISIBLE : View.GONE);
+            }
+        });
+        alarmSection.addView(alarmCheck);
+        alarmOptions.addView(alarmRepeatCheck);
+        alarmOptions.addView(alarmTimeButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        alarmOptions.setVisibility(alarmCheck.isChecked() ? View.VISIBLE : View.GONE);
+        alarmSection.addView(alarmOptions);
+
         pageScroll.addView(root, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
-        return pageScroll;
+        screen.addView(pageScroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+
+        LinearLayout actionBar = new LinearLayout(this);
+        actionBar.setGravity(Gravity.CENTER_VERTICAL);
+        actionBar.setPadding(dp(18), dp(7), dp(18), dp(7));
+        actionBar.setBackgroundColor(PANEL);
+        TextView actionHint = text("完成後儲存，第三頁會立即套用。", 14, SECONDARY);
+        Button cancel = button("取消", Color.rgb(52, 65, 77));
+        cancel.setContentDescription("取消變更並返回");
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                finish();
+            }
+        });
+        Button save = button("儲存並返回", Color.rgb(37, 124, 137));
+        save.setContentDescription("儲存設定並返回第三頁");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                saveSelection();
+            }
+        });
+        actionBar.addView(actionHint, new LinearLayout.LayoutParams(0, dp(48), 1));
+        actionBar.addView(cancel, new LinearLayout.LayoutParams(dp(110), dp(48)));
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(dp(160), dp(48));
+        saveParams.setMargins(dp(10), 0, 0, 0);
+        actionBar.addView(save, saveParams);
+        screen.addView(actionBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(62)));
+        return screen;
+    }
+
+    private LinearLayout addSettingsSection(LinearLayout parent, final String title,
+            String summary, boolean expanded) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(rounded(PANEL));
+
+        final LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(14), dp(8), dp(14), dp(8));
+        header.setMinimumHeight(dp(58));
+        header.setClickable(true);
+        header.setFocusable(true);
+
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        TextView titleView = text(title, 18, PRIMARY);
+        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView summaryView = text(summary, 13, SECONDARY);
+        labels.addView(titleView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(26)));
+        labels.addView(summaryView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(20)));
+
+        final TextView state = text(expanded ? "收合" : "展開", 14, ACCENT);
+        state.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        header.addView(labels, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(state, new LinearLayout.LayoutParams(dp(64), dp(44)));
+        card.addView(header);
+
+        final View divider = new View(this);
+        divider.setBackgroundColor(Color.rgb(52, 65, 77));
+        divider.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        card.addView(divider, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
+
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(10), dp(6), dp(10), dp(12));
+        body.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        card.addView(body, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        header.setContentDescription(title + "，目前" + (expanded ? "已展開" : "已收合")
+                + "，點一下切換");
+        header.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                boolean shouldExpand = body.getVisibility() != View.VISIBLE;
+                body.setVisibility(shouldExpand ? View.VISIBLE : View.GONE);
+                divider.setVisibility(shouldExpand ? View.VISIBLE : View.GONE);
+                state.setText(shouldExpand ? "收合" : "展開");
+                header.setContentDescription(title + "，目前"
+                        + (shouldExpand ? "已展開" : "已收合") + "，點一下切換");
+            }
+        });
+
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardParams.setMargins(0, 0, 0, dp(10));
+        parent.addView(card, cardParams);
+        return body;
+    }
+
+    private Spinner addFontSetting(LinearLayout parent, String label, int selectedStyle) {
+        TextView labelView = text(label, 14, SECONDARY);
+        labelView.setPadding(dp(10), dp(7), dp(10), dp(3));
+        parent.addView(labelView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(32)));
+        Spinner spinner = createFontSpinner(selectedStyle);
+        spinner.setContentDescription(label);
+        parent.addView(spinner, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        return spinner;
     }
 
     private Spinner createFontSpinner(int selectedStyle) {
@@ -506,7 +633,7 @@ public final class PhotoFolderActivity extends Activity {
             // advertise persistable permission. Keep it for this session.
         }
         selectedFolders.add(treeUri.toString());
-        Toast.makeText(this, "已加入系統選擇的照片資料夾，請按「套用」儲存",
+        Toast.makeText(this, "已加入系統選擇的照片資料夾，請按「儲存並返回」",
                 Toast.LENGTH_LONG).show();
         showDirectory();
     }
@@ -566,7 +693,7 @@ public final class PhotoFolderActivity extends Activity {
             }
         });
         TextView name = text(directory.getName() + "   ›", 18, PRIMARY);
-        name.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        name.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         name.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -646,6 +773,12 @@ public final class PhotoFolderActivity extends Activity {
                     !customized || savedFolders.contains(folder));
             check.setTextSize(14);
             check.setPadding(dp(18), dp(2), dp(10), dp(2));
+            check.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    updateSelectionCount();
+                }
+            });
             privateAlbumFolderChecks.put(folder, check);
             privateAlbumFolderList.addView(check, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -774,7 +907,9 @@ public final class PhotoFolderActivity extends Activity {
 
     private void updateIntervalText() {
         if (intervalText != null && intervalSeek != null) {
-            intervalText.setText("單張停留：" + (10 + intervalSeek.getProgress() * 5) + " 秒");
+            String summary = "單張停留：" + (10 + intervalSeek.getProgress() * 5) + " 秒";
+            intervalText.setText(summary);
+            intervalSeek.setContentDescription(summary);
         }
     }
 
@@ -785,6 +920,8 @@ public final class PhotoFolderActivity extends Activity {
         check.setTextSize(16);
         check.setChecked(checked);
         check.setPadding(dp(10), dp(2), dp(10), dp(2));
+        check.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        check.setMinimumHeight(dp(44));
         return check;
     }
 
@@ -867,7 +1004,7 @@ public final class PhotoFolderActivity extends Activity {
         view.setText(value);
         view.setTextSize(size);
         view.setTextColor(color);
-        view.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        view.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         return view;
     }
 

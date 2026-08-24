@@ -1,6 +1,6 @@
 [package]
 name = "quietpanel-bridge"
-version = "42.0.5-redmi42"
+version = "42.0.6-redmi42"
 edition = "2021"
 
 [[bin]]
